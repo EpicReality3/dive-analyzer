@@ -1,4 +1,37 @@
+# Python
 venv/
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
 .DS_Store
+Thumbs.db
+
+# Streamlit
+.streamlit/
+
+# Base de données locale (données utilisateur)
+dive_log.db
+*.db
+
+# Fichiers uploadés (données utilisateur)
+uploads/
+
+# Test files
+test_*.py
+*_test.py
