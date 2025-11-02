@@ -134,6 +134,86 @@ if uploaded_file is not None:
                                 with col3:
                                     st.metric("Volume consommé", f"{sac_result['volume_consomme']:.0f} L")
 
+                # Section Physique Avancée
+                st.header("🔬 Physique Avancée de Décompression")
+
+                st.info("ℹ️ Modèle simplifié à 1 compartiment tissulaire (demi-vie 40 min) - Pédagogique uniquement, pas pour planification de plongée réelle")
+
+                # Calculer les métriques avancées
+                physics = analyzer.get_advanced_physics_summary(df)
+
+                # Afficher les métriques clés
+                col1, col2 = st.columns(2)
+
+                with col1:
+                    st.subheader("🧬 Saturation Tissulaire")
+                    st.metric(
+                        "Pression N₂ max dans tissu",
+                        f"{physics['max_tissue_N2_pressure']:.2f} bar",
+                        help=f"Atteint à {physics['max_tissue_N2_time']:.1f} min"
+                    )
+                    st.metric(
+                        "Gradient N₂ max",
+                        f"{physics['max_N2_gradient']:.2f} bar",
+                        help=f"Différence tissu-ambiant maximale à {physics['max_N2_gradient_time']:.1f} min"
+                    )
+
+                with col2:
+                    st.subheader("💨 Azote Résiduel Post-Plongée")
+                    residual = physics['residual_nitrogen']
+                    st.metric(
+                        "Sursaturation résiduelle",
+                        f"{residual['residual_percentage']:.1f}%",
+                        help="Excès d'azote vs pression normale surface"
+                    )
+                    st.metric(
+                        "Intervalle de surface recommandé",
+                        f"{residual['recommended_surface_interval_min']:.0f} min",
+                        help="Temps conservatif avant prochaine plongée (3 × demi-vie)"
+                    )
+                    st.metric(
+                        "Temps retour à 90% normal",
+                        f"{residual['time_to_90_percent_desaturation_min']:.0f} min",
+                        help="Temps de désaturation quasi-complète"
+                    )
+
+                # Graphique optionnel : évolution saturation tissulaire
+                with st.expander("📈 Voir l'évolution de la saturation N₂"):
+                    import plotly.graph_objects as go
+
+                    df_physics = physics['df_enriched']
+                    temps_min = df_physics['temps_secondes'] / 60
+
+                    fig_saturation = go.Figure()
+
+                    # Courbe PP_N2 alvéolaire (ambiant)
+                    fig_saturation.add_trace(go.Scatter(
+                        x=temps_min,
+                        y=df_physics['PP_N2'],
+                        mode='lines',
+                        name='PP N₂ alvéolaire (ambiant)',
+                        line=dict(color='blue', width=2)
+                    ))
+
+                    # Courbe pression tissulaire
+                    fig_saturation.add_trace(go.Scatter(
+                        x=temps_min,
+                        y=df_physics['tissue_N2_pressure'],
+                        mode='lines',
+                        name='Pression N₂ tissulaire',
+                        line=dict(color='red', width=2, dash='dash')
+                    ))
+
+                    fig_saturation.update_layout(
+                        title='Saturation en Azote - Compartiment à 40 min',
+                        xaxis_title='Temps (minutes)',
+                        yaxis_title='Pression N₂ (bar)',
+                        height=400,
+                        hovermode='x unified'
+                    )
+
+                    st.plotly_chart(fig_saturation, use_container_width=True)
+
         except Exception as e:
             st.error(f"❌ Erreur lors du parsing : {str(e)}")
 else:
