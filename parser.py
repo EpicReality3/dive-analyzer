@@ -193,12 +193,12 @@ class UddfParser(BaseDiveParser):
             data_points = []
 
             # Trouver tous les waypoints (points de mesure) dans le fichier
-            # Le './/waypoint' recherche récursivement tous les éléments waypoint
-            waypoints = root.findall('.//waypoint')
+            # Le './/{*}waypoint' recherche récursivement tous les éléments waypoint en ignorant les namespaces
+            waypoints = root.findall('.//{*}waypoint')
 
             for waypoint in waypoints:
                 # Extraire le temps de plongée (divetime en secondes)
-                divetime_elem = waypoint.find('divetime')
+                divetime_elem = waypoint.find('{*}divetime')
                 if divetime_elem is not None and divetime_elem.text:
                     temps_secondes = float(divetime_elem.text)
                 else:
@@ -206,18 +206,23 @@ class UddfParser(BaseDiveParser):
                     continue
 
                 # Extraire la profondeur (depth en mètres)
-                depth_elem = waypoint.find('depth')
+                depth_elem = waypoint.find('{*}depth')
                 profondeur_metres = float(depth_elem.text) if depth_elem is not None and depth_elem.text else np.nan
 
-                # Extraire la température (temperature en Celsius)
-                temp_elem = waypoint.find('temperature')
-                temperature_celsius = float(temp_elem.text) if temp_elem is not None and temp_elem.text else np.nan
+                # Extraire la température (temperature en Kelvin dans UDDF, conversion en Celsius)
+                temp_elem = waypoint.find('{*}temperature')
+                if temp_elem is not None and temp_elem.text:
+                    temp_kelvin = float(temp_elem.text)
+                    # Conversion Kelvin → Celsius
+                    temperature_celsius = temp_kelvin - 273.15
+                else:
+                    temperature_celsius = np.nan
 
                 # Extraire la pression de la bouteille (tankpressure en bar)
                 # Certains fichiers peuvent utiliser d'autres noms
-                pressure_elem = waypoint.find('tankpressure')
+                pressure_elem = waypoint.find('{*}tankpressure')
                 if pressure_elem is None:
-                    pressure_elem = waypoint.find('pressure')
+                    pressure_elem = waypoint.find('{*}pressure')
                 pression_bouteille_bar = float(pressure_elem.text) if pressure_elem is not None and pressure_elem.text else np.nan
 
                 # Ajouter le point de données
