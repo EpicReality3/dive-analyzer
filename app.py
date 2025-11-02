@@ -5,66 +5,13 @@ import visualizer
 import analyzer
 
 
-def render_safety_banner(df: pd.DataFrame) -> None:
-    """
-    Affiche un bandeau de sécurité avec bordure colorée.
-
-    Analyse :
-    - Vitesse de remontée (seuil 10 m/min)
-    - Détection paliers (à implémenter plus tard)
-
-    Style : Bordure épaisse + fond blanc (adapté dyslexie)
-    """
-    # Calculer vitesse max de remontée
-    speeds = visualizer.calculate_ascent_speed(df)
-    max_speed = speeds.max()
-
-    # Déterminer statut sécurité
-    is_safe = max_speed < 10.0
-
-    if is_safe:
-        border_color = "#28a745"  # Vert
-        emoji = "🟢"
-        status_text = "PLONGÉE SÉCURITAIRE"
-        details = [
-            f"✅ Vitesse remontée max : {max_speed:.1f} m/min (OK)"
-        ]
-    else:
-        border_color = "#dc3545"  # Rouge
-        emoji = "🔴"
-        status_text = "ALERTES DÉTECTÉES"
-        details = [
-            f"⚠️ Vitesse remontée max : {max_speed:.1f} m/min (> 10 m/min)"
-        ]
-
-    # Afficher avec markdown + HTML custom
-    st.markdown(
-        f"""
-        <div style="
-            border: 4px solid {border_color};
-            border-radius: 8px;
-            padding: 20px;
-            background-color: white;
-            margin: 20px 0;
-        ">
-            <h3 style="margin-top: 0; color: {border_color};">
-                {emoji} {status_text}
-            </h3>
-            {''.join([f'<p style="margin: 5px 0;">{detail}</p>' for detail in details])}
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-
 def render_reset_button() -> None:
     """Affiche un bouton pour réinitialiser l'upload."""
-    col1, col2, col3 = st.columns([1, 1, 1])
-    with col2:  # Centrer le bouton
-        if st.button("🔄 Analyser une autre plongée", use_container_width=True):
-            st.rerun()
+    if st.button("🔄 Analyser une autre plongée", use_container_width=True):
+        st.rerun()
 
 
+st.set_page_config(page_title="DIVE ANALYZER", page_icon="🤿", layout="wide")
 st.title("🤿 DIVE ANALYZER")
 
 uploaded_file = st.file_uploader(
@@ -95,36 +42,60 @@ if uploaded_file is not None:
             else:
                 st.success(f"✅ {len(df)} points de données extraits")
 
-                # Bandeau de sécurité
-                render_safety_banner(df)
+                # === DASHBOARD KPIs ===
+                st.markdown("### 📊 Vue d'Ensemble")
+                col1, col2, col3, col4, col5 = st.columns(5)
 
-                # Graphique de profondeur (déplacé en haut)
-                st.subheader("📊 Profil de Plongée")
-                try:
-                    fig = visualizer.plot_depth_profile(df)
-                    st.plotly_chart(fig, use_container_width=True)
-                except Exception as e:
-                    st.error(f"❌ Erreur lors de la création du graphique : {str(e)}")
-
-                # Metrics essentielles (Niveau 1)
-                col1, col2, col3 = st.columns(3)
                 with col1:
                     st.metric("⬇️ Profondeur Max", f"{df['profondeur_metres'].max():.1f} m")
+
                 with col2:
                     st.metric("⏱️ Durée Totale", f"{df['temps_secondes'].max() / 60:.0f} min")
+
                 with col3:
+                    sac_result = analyzer.calculate_sac(df)
+                    if sac_result and sac_result.get('sac'):
+                        st.metric("🫁 SAC", f"{sac_result['sac']:.1f} L/min", help="Surface Air Consumption")
+                    else:
+                        st.metric("🫁 SAC", "N/A", help="Nécessite données de pression")
+
+                with col4:
                     temp_min = df['temperature_celsius'].min()
                     if pd.notna(temp_min):
                         st.metric("🌡️ Température Min", f"{temp_min:.1f} °C")
                     else:
                         st.metric("🌡️ Température", "N/A")
 
-                # Bouton reset
-                render_reset_button()
+                with col5:
+                    bottom_time = analyzer.calculate_bottom_time(df)
+                    st.metric("⏳ Temps de Fond", f"{bottom_time['temps_fond_minutes']:.1f} min", help="Temps sous 3m")
 
-                # Expander Statistiques Avancées
-                with st.expander("📊 Statistiques Avancées", expanded=False):
+                st.divider()
 
+                # === SECTION PROFIL ===
+                st.markdown("### 🤿 Profil de Plongée")
+
+                # Graphique
+                try:
+                    fig = visualizer.plot_depth_profile(df)
+                    st.plotly_chart(fig, use_container_width=True)
+                except Exception as e:
+                    st.error(f"❌ Erreur lors de la création du graphique : {str(e)}")
+
+                # Bandeau sécurité SOUS le graphique (version compacte native)
+                speeds = visualizer.calculate_ascent_speed(df)
+                max_speed = speeds.max()
+                if max_speed < 10.0:
+                    st.success(f"🟢 **Plongée sécuritaire** — Vitesse remontée max : {max_speed:.1f} m/min")
+                else:
+                    st.error(f"🔴 **Alerte** — Vitesse remontée max : {max_speed:.1f} m/min (> 10 m/min)")
+
+                st.divider()
+
+                # === TABS NAVIGATION ===
+                tab1, tab2 = st.tabs(["📊 Statistiques Avancées", "🔬 Physique de Décompression"])
+
+                with tab1:
                     # Groupe 1 : Temps & Profondeur
                     st.subheader("⏱️ Temps & Profondeur")
                     bottom_time = analyzer.calculate_bottom_time(df)
@@ -203,9 +174,7 @@ if uploaded_file is not None:
                     else:
                         st.info("Pas de données de température disponibles")
 
-                # Expander Physique de Décompression
-                with st.expander("🔬 Physique de Décompression", expanded=False):
-
+                with tab2:
                     # Warning plus visible
                     st.warning(
                         "⚠️ **Modèle pédagogique simplifié** (1 compartiment, demi-vie 40 min)\n\n"
@@ -286,6 +255,8 @@ if uploaded_file is not None:
                         )
 
                         st.plotly_chart(fig_saturation, use_container_width=True)
+
+                st.divider()
 
                 # Bouton reset en bas de page
                 render_reset_button()
