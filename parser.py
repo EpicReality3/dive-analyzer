@@ -12,6 +12,10 @@ from abc import ABC, abstractmethod
 from fitparse import FitFile
 from io import BytesIO
 import xml.etree.ElementTree as ET
+from typing import List, Dict, Optional
+from logger import get_logger
+
+logger = get_logger(__name__)
 
 
 class BaseDiveParser(ABC):
@@ -130,7 +134,7 @@ class FitParser(BaseDiveParser):
 
         except Exception as e:
             # En cas d'erreur, logger et retourner DataFrame vide
-            print(f"Erreur lors du parsing FIT: {e}")
+            logger.error(f"Erreur lors du parsing FIT : {e}", exc_info=True)
             return pd.DataFrame(columns=[
                 'temps_secondes',
                 'profondeur_metres',
@@ -140,21 +144,188 @@ class FitParser(BaseDiveParser):
 
 
 class XmlParser(BaseDiveParser):
-    """Parser pour les fichiers XML génériques."""
+    """
+    Parser pour les fichiers XML génériques.
+
+    Ce parser tente de détecter automatiquement la structure XML
+    et d'extraire les données de plongée en cherchant des balises
+    communes utilisées dans divers formats.
+    """
+
+    # Mapping des noms de balises possibles
+    TIME_TAGS = ['time', 'divetime', 'timestamp', 'seconds', 'elapsed']
+    DEPTH_TAGS = ['depth', 'prof', 'profondeur', 'meters', 'metres']
+    TEMP_TAGS = ['temperature', 'temp', 'watertemp']
+    PRESSURE_TAGS = ['pressure', 'tankpressure', 'pression']
 
     def parse(self) -> pd.DataFrame:
         """
-        Parse un fichier XML.
+        Parse un fichier XML en tentant de détecter automatiquement la structure.
 
-        TODO: Implémenter parsing XML
+        Cette méthode cherche les balises communes pour extraire :
+        - Temps (divetime, time, timestamp)
+        - Profondeur (depth, prof)
+        - Température (temperature, temp)
+        - Pression bouteille (pressure, tankpressure)
+
+        Returns:
+            DataFrame avec les données de plongée parsées
         """
-        # Retourne DataFrame vide avec la structure attendue
-        return pd.DataFrame(columns=[
-            'temps_secondes',
-            'profondeur_metres',
-            'temperature_celsius',
-            'pression_bouteille_bar'
-        ])
+        try:
+            logger.info("Parsing fichier XML générique...")
+
+            # Parser le XML
+            root = ET.fromstring(self.file_content)
+
+            # Essayer d'abord de parser comme UDDF (cas le plus courant)
+            if self._is_uddf(root):
+                logger.info("Fichier XML détecté comme UDDF, utilisation du parser UDDF")
+                uddf_parser = UddfParser(self.file_content)
+                return uddf_parser.parse()
+
+            # Sinon, chercher les waypoints/samples génériques
+            data_points = self._extract_generic_waypoints(root)
+
+            if not data_points:
+                logger.warning("Aucune donnée trouvée dans le fichier XML")
+                return pd.DataFrame(columns=[
+                    'temps_secondes',
+                    'profondeur_metres',
+                    'temperature_celsius',
+                    'pression_bouteille_bar'
+                ])
+
+            # Créer le DataFrame
+            df = pd.DataFrame(data_points)
+
+            # Trier par temps
+            df = df.sort_values('temps_secondes').reset_index(drop=True)
+
+            logger.info(f"XML parsé avec succès : {len(df)} points de données")
+            return df
+
+        except ET.ParseError as e:
+            logger.error(f"Erreur de parsing XML : {e}", exc_info=True)
+            return pd.DataFrame(columns=[
+                'temps_secondes',
+                'profondeur_metres',
+                'temperature_celsius',
+                'pression_bouteille_bar'
+            ])
+        except Exception as e:
+            logger.error(f"Erreur lors du parsing XML : {e}", exc_info=True)
+            return pd.DataFrame(columns=[
+                'temps_secondes',
+                'profondeur_metres',
+                'temperature_celsius',
+                'pression_bouteille_bar'
+            ])
+
+    def _is_uddf(self, root: ET.Element) -> bool:
+        """Détecte si le XML est au format UDDF."""
+        # Chercher la balise <uddf> ou un namespace UDDF
+        if root.tag.endswith('uddf') or 'uddf' in root.tag.lower():
+            return True
+        # Chercher des balises caractéristiques UDDF
+        if root.find('.//{*}waypoint') is not None:
+            return True
+        return False
+
+    def _extract_generic_waypoints(self, root: ET.Element) -> List[Dict]:
+        """
+        Extrait les waypoints de manière générique en cherchant les balises communes.
+
+        Args:
+            root: Élément racine XML
+
+        Returns:
+            Liste de dictionnaires contenant les données de chaque waypoint
+        """
+        data_points = []
+
+        # Chercher tous les éléments qui pourraient être des waypoints
+        # (sample, waypoint, record, datapoint, etc.)
+        possible_waypoint_tags = ['sample', 'waypoint', 'record', 'datapoint', 'point', 'data']
+
+        waypoints = []
+        for tag in possible_waypoint_tags:
+            waypoints.extend(root.findall(f'.//{tag}'))
+            waypoints.extend(root.findall(f'.//{{{tag}}}'))
+
+        if not waypoints:
+            logger.warning("Aucun waypoint trouvé dans le XML")
+            return []
+
+        logger.debug(f"Trouvé {len(waypoints)} waypoints potentiels")
+
+        for waypoint in waypoints:
+            point_data = self._extract_waypoint_data(waypoint)
+            if point_data and 'temps_secondes' in point_data:
+                data_points.append(point_data)
+
+        return data_points
+
+    def _extract_waypoint_data(self, waypoint: ET.Element) -> Optional[Dict]:
+        """
+        Extrait les données d'un seul waypoint.
+
+        Args:
+            waypoint: Élément XML représentant un waypoint
+
+        Returns:
+            Dictionnaire avec les données du waypoint ou None si invalide
+        """
+        # Extraire le temps
+        temps = self._find_value_by_tags(waypoint, self.TIME_TAGS)
+        if temps is None:
+            return None
+
+        # Extraire la profondeur
+        profondeur = self._find_value_by_tags(waypoint, self.DEPTH_TAGS)
+
+        # Extraire la température
+        temperature = self._find_value_by_tags(waypoint, self.TEMP_TAGS)
+
+        # Extraire la pression
+        pression = self._find_value_by_tags(waypoint, self.PRESSURE_TAGS)
+
+        return {
+            'temps_secondes': float(temps) if temps is not None else 0.0,
+            'profondeur_metres': float(profondeur) if profondeur is not None else np.nan,
+            'temperature_celsius': float(temperature) if temperature is not None else np.nan,
+            'pression_bouteille_bar': float(pression) if pression is not None else np.nan
+        }
+
+    def _find_value_by_tags(self, element: ET.Element, possible_tags: List[str]) -> Optional[str]:
+        """
+        Cherche une valeur en essayant plusieurs noms de balises possibles.
+
+        Args:
+            element: Élément XML dans lequel chercher
+            possible_tags: Liste de noms de balises possibles
+
+        Returns:
+            Valeur de la première balise trouvée, ou None
+        """
+        for tag in possible_tags:
+            # Essayer avec et sans namespace
+            value_elem = element.find(tag)
+            if value_elem is None:
+                value_elem = element.find(f'.//{tag}')
+            if value_elem is None:
+                value_elem = element.find(f'{{{tag}}}')
+            if value_elem is None:
+                # Essayer avec wildcard namespace
+                value_elem = element.find(f'{{{*}}}{tag}')
+
+            if value_elem is not None and value_elem.text:
+                return value_elem.text.strip()
+
+            # Essayer aussi comme attribut
+            if tag in element.attrib:
+                return element.attrib[tag]
+
+        return None
 
 
 class UddfParser(BaseDiveParser):
@@ -252,7 +423,7 @@ class UddfParser(BaseDiveParser):
 
         except ET.ParseError as e:
             # Erreur de parsing XML
-            print(f"Erreur lors du parsing XML UDDF: {e}")
+            logger.error(f"Erreur de parsing XML UDDF : {e}", exc_info=True)
             return pd.DataFrame(columns=[
                 'temps_secondes',
                 'profondeur_metres',
@@ -261,7 +432,7 @@ class UddfParser(BaseDiveParser):
             ])
         except Exception as e:
             # Autres erreurs
-            print(f"Erreur lors du parsing UDDF: {e}")
+            logger.error(f"Erreur lors du parsing UDDF : {e}", exc_info=True)
             return pd.DataFrame(columns=[
                 'temps_secondes',
                 'profondeur_metres',
@@ -304,6 +475,8 @@ def parse_dive_file(uploaded_file) -> pd.DataFrame:
     # Récupérer l'extension du fichier
     file_extension = Path(uploaded_file.name).suffix.lower()
 
+    logger.info(f"Parsing du fichier {uploaded_file.name} (extension: {file_extension})")
+
     # Lire le contenu du fichier
     file_content = uploaded_file.read()
 
@@ -317,7 +490,15 @@ def parse_dive_file(uploaded_file) -> pd.DataFrame:
     elif file_extension == '.dl7':
         parser = Dl7Parser(file_content)
     else:
+        logger.error(f"Format de fichier non supporté : {file_extension}")
         raise ValueError(f"Format de fichier non supporté : {file_extension}")
 
     # Parser et retourner le DataFrame
-    return parser.parse()
+    df = parser.parse()
+
+    if df.empty:
+        logger.warning(f"Parsing de {uploaded_file.name} n'a renvoyé aucune donnée")
+    else:
+        logger.info(f"Parsing réussi : {len(df)} points de données extraits")
+
+    return df

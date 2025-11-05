@@ -5,6 +5,11 @@ import visualizer
 import analyzer
 import database
 from pathlib import Path
+from validation import validate_uploaded_file, sanitize_filename
+from config import config
+from logger import get_logger
+
+logger = get_logger(__name__)
 
 # Configuration page
 st.set_page_config(page_title="Analyse de Plongée", page_icon="📤", layout="wide")
@@ -29,8 +34,17 @@ uploaded_file = st.file_uploader(
 )
 
 if uploaded_file is not None:
+    # Valider le fichier uploadé
+    is_valid, error_msg = validate_uploaded_file(uploaded_file)
+
+    if not is_valid:
+        st.error(f"❌ {error_msg}")
+        logger.warning(f"Fichier rejeté : {uploaded_file.name} - {error_msg}")
+        st.stop()
+
     # Afficher infos fichier
-    st.success(f"✅ Fichier uploadé : {uploaded_file.name}")
+    st.success(f"✅ Fichier uploadé et validé : {uploaded_file.name}")
+    logger.info(f"Fichier accepté : {uploaded_file.name}")
 
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -324,12 +338,8 @@ if uploaded_file is not None:
                     )
 
                     # Tags : combiner tags standards + tags existants en DB
-                    standard_tags = [
-                        "Épave", "Grotte", "Tombant", "Nuit", "Dérivante",
-                        "Formation", "Technique", "Faune", "Flore", "Photo"
-                    ]
                     existing_tags = database.get_all_tags()
-                    all_tags = sorted(set(standard_tags + existing_tags))
+                    all_tags = sorted(set(config.STANDARD_TAGS + existing_tags))
 
                     tags = st.multiselect(
                         "🏷️ Tags",
@@ -361,12 +371,12 @@ if uploaded_file is not None:
                             from datetime import datetime
 
                             # Copier le fichier uploadé dans dossier uploads/
-                            uploads_dir = Path.home() / "dive-analyzer" / "uploads"
-                            uploads_dir.mkdir(exist_ok=True)
+                            uploads_dir = config.UPLOADS_DIR
 
-                            # Générer nom unique pour le fichier
+                            # Générer nom unique pour le fichier (avec sanitization)
                             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                            file_extension = Path(uploaded_file.name).suffix
+                            safe_filename = sanitize_filename(uploaded_file.name)
+                            file_extension = Path(safe_filename).suffix
                             new_filename = f"dive_{timestamp}{file_extension}"
                             file_path = uploads_dir / new_filename
 
@@ -412,8 +422,10 @@ if uploaded_file is not None:
                                 dive_id = database.insert_dive(dive_data)
                                 st.success(f"✅ Plongée enregistrée avec succès (ID: {dive_id})")
                                 st.info("💡 Utilisez 'Analyser une autre plongée' pour continuer")
+                                logger.info(f"Plongée sauvegardée : ID {dive_id}, site: {site_nom}")
                             except Exception as e:
                                 st.error(f"❌ Erreur lors de l'enregistrement : {str(e)}")
+                                logger.error(f"Erreur lors de l'enregistrement : {e}", exc_info=True)
 
                 st.divider()
 
@@ -422,5 +434,6 @@ if uploaded_file is not None:
 
         except Exception as e:
             st.error(f"❌ Erreur lors du parsing : {str(e)}")
+            logger.error(f"Erreur lors du parsing de {uploaded_file.name} : {e}", exc_info=True)
 else:
     st.info("Uploadez un fichier de plongée")

@@ -2,6 +2,10 @@ import streamlit as st
 import database
 import pandas as pd
 from pathlib import Path
+from config import config
+from logger import get_logger
+
+logger = get_logger(__name__)
 
 # Configuration page
 st.set_page_config(
@@ -339,12 +343,8 @@ else:
                     )
 
                     # Tags : combiner tags standards + tags existants en DB
-                    standard_tags = [
-                        "Épave", "Grotte", "Tombant", "Nuit", "Dérivante",
-                        "Formation", "Technique", "Faune", "Flore", "Photo"
-                    ]
                     existing_tags = database.get_all_tags()
-                    all_tags = sorted(set(standard_tags + existing_tags))
+                    all_tags = sorted(set(config.STANDARD_TAGS + existing_tags))
 
                     tags = st.multiselect(
                         "🏷️ Tags",
