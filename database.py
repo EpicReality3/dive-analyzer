@@ -115,9 +115,46 @@ def init_database() -> None:
         )
     """)
 
+    # Table 6 : Cache des données parsées (Phase 2 - Performance)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS cached_dive_data (
+            dive_id INTEGER PRIMARY KEY,
+            cached_dataframe BLOB NOT NULL,
+            cache_timestamp TEXT NOT NULL,
+            file_hash TEXT,
+            FOREIGN KEY (dive_id) REFERENCES dives(id) ON DELETE CASCADE
+        )
+    """)
+
+    # ===== INDEX POUR AMÉLIORER LES PERFORMANCES (Phase 2) =====
+
+    # Index sur dives.date pour accélérer les tris et filtres par date
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_dives_date
+        ON dives(date DESC)
+    """)
+
+    # Index sur dives.site_id pour accélérer les JOINs avec sites
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_dives_site_id
+        ON dives(site_id)
+    """)
+
+    # Index sur dives.rating pour accélérer les filtres par note
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_dives_rating
+        ON dives(rating DESC)
+    """)
+
+    # Index composite sur date + site_id pour les requêtes combinées
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_dives_date_site
+        ON dives(date DESC, site_id)
+    """)
+
     conn.commit()
     conn.close()
-    logger.info("✅ Base de données initialisée avec succès")
+    logger.info("✅ Base de données initialisée avec succès (tables + index + cache)")
 
 
 def _insert_or_get_entity(
@@ -560,6 +597,153 @@ def get_all_tags() -> List[str]:
 
     conn.close()
     return tags
+
+
+def save_dive_cache(dive_id: int, dataframe: pd.DataFrame, file_hash: Optional[str] = None) -> bool:
+    """
+    Sauvegarde le DataFrame parsé dans le cache pour améliorer les performances.
+
+    Args:
+        dive_id: ID de la plongée
+        dataframe: DataFrame à mettre en cache
+        file_hash: Hash optionnel du fichier pour détection de modification
+
+    Returns:
+        True si succès, False sinon
+    """
+    try:
+        import pickle
+        from datetime import datetime
+
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        # Sérialiser le DataFrame avec pickle
+        cached_data = pickle.dumps(dataframe)
+        cache_timestamp = datetime.now().isoformat()
+
+        # Utiliser INSERT OR REPLACE pour gérer les updates
+        cursor.execute("""
+            INSERT OR REPLACE INTO cached_dive_data
+            (dive_id, cached_dataframe, cache_timestamp, file_hash)
+            VALUES (?, ?, ?, ?)
+        """, (dive_id, cached_data, cache_timestamp, file_hash))
+
+        conn.commit()
+        conn.close()
+
+        logger.info(f"DataFrame mis en cache pour la plongée {dive_id}")
+        return True
+
+    except Exception as e:
+        logger.error(f"Erreur lors de la mise en cache de la plongée {dive_id} : {e}", exc_info=True)
+        return False
+
+
+def get_dive_cache(dive_id: int) -> Optional[pd.DataFrame]:
+    """
+    Récupère le DataFrame mis en cache pour une plongée.
+
+    Args:
+        dive_id: ID de la plongée
+
+    Returns:
+        DataFrame mis en cache ou None si absent/expiré
+    """
+    try:
+        import pickle
+
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT cached_dataframe, cache_timestamp
+            FROM cached_dive_data
+            WHERE dive_id = ?
+        """, (dive_id,))
+
+        result = cursor.fetchone()
+        conn.close()
+
+        if not result:
+            logger.debug(f"Pas de cache trouvé pour la plongée {dive_id}")
+            return None
+
+        # Désérialiser le DataFrame
+        cached_dataframe = pickle.loads(result[0])
+        cache_timestamp = result[1]
+
+        logger.info(f"Cache récupéré pour la plongée {dive_id} (créé le {cache_timestamp})")
+        return cached_dataframe
+
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération du cache pour la plongée {dive_id} : {e}", exc_info=True)
+        return None
+
+
+def invalidate_dive_cache(dive_id: int) -> bool:
+    """
+    Invalide le cache d'une plongée (à appeler en cas de modification du fichier).
+
+    Args:
+        dive_id: ID de la plongée
+
+    Returns:
+        True si succès, False sinon
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("DELETE FROM cached_dive_data WHERE dive_id = ?", (dive_id,))
+
+        conn.commit()
+        conn.close()
+
+        logger.info(f"Cache invalidé pour la plongée {dive_id}")
+        return True
+
+    except Exception as e:
+        logger.error(f"Erreur lors de l'invalidation du cache pour la plongée {dive_id} : {e}")
+        return False
+
+
+def get_cache_stats() -> Dict[str, Any]:
+    """
+    Récupère les statistiques du cache.
+
+    Returns:
+        Dictionnaire avec les statistiques du cache
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        # Nombre d'entrées en cache
+        cursor.execute("SELECT COUNT(*) FROM cached_dive_data")
+        cache_count = cursor.fetchone()[0]
+
+        # Taille totale du cache (approximative)
+        cursor.execute("SELECT SUM(LENGTH(cached_dataframe)) FROM cached_dive_data")
+        cache_size_bytes = cursor.fetchone()[0] or 0
+        cache_size_mb = cache_size_bytes / (1024 * 1024)
+
+        # Nombre total de plongées
+        cursor.execute("SELECT COUNT(*) FROM dives")
+        total_dives = cursor.fetchone()[0]
+
+        conn.close()
+
+        return {
+            'cached_dives': cache_count,
+            'total_dives': total_dives,
+            'cache_hit_rate': (cache_count / total_dives * 100) if total_dives > 0 else 0,
+            'cache_size_mb': round(cache_size_mb, 2)
+        }
+
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération des stats du cache : {e}")
+        return {}
 
 
 # Initialiser la base au premier import (seulement si elle n'existe pas)
