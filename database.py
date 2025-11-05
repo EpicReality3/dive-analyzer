@@ -9,8 +9,12 @@ import sqlite3
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 import pandas as pd
+from config import config
+from logger import get_logger
 
-DB_PATH = Path.home() / "dive-analyzer" / "dive_log.db"
+logger = get_logger(__name__)
+
+DB_PATH = config.DB_PATH
 
 
 def get_connection() -> sqlite3.Connection:
@@ -18,9 +22,14 @@ def get_connection() -> sqlite3.Connection:
     Crée et retourne une connexion à la base de données.
     Active les foreign keys (important pour l'intégrité).
     """
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("PRAGMA foreign_keys = ON")
-    return conn
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        conn.execute("PRAGMA foreign_keys = ON")
+        logger.debug(f"Connexion établie à la base de données : {DB_PATH}")
+        return conn
+    except sqlite3.Error as e:
+        logger.error(f"Erreur lors de la connexion à la base de données : {e}")
+        raise
 
 
 def init_database() -> None:
@@ -108,7 +117,56 @@ def init_database() -> None:
 
     conn.commit()
     conn.close()
-    print("✅ Base de données initialisée avec succès")
+    logger.info("✅ Base de données initialisée avec succès")
+
+
+def _insert_or_get_entity(
+    cursor: sqlite3.Cursor,
+    table: str,
+    name: str,
+    extra_field: Optional[str] = None,
+    extra_value: Optional[Any] = None
+) -> int:
+    """
+    Fonction générique pour insérer ou récupérer une entité par nom.
+
+    Cette fonction élimine la duplication de code entre insert_site,
+    insert_buddy et insert_tag.
+
+    Args:
+        cursor: Curseur de base de données
+        table: Nom de la table (sites, buddies, tags)
+        name: Nom de l'entité à insérer/récupérer
+        extra_field: Nom du champ supplémentaire optionnel (pays, niveau_certification, categorie)
+        extra_value: Valeur du champ supplémentaire
+
+    Returns:
+        ID de l'entité (existante ou nouvellement créée)
+    """
+    # Vérifier si l'entité existe déjà
+    cursor.execute(f"SELECT id FROM {table} WHERE nom = ?", (name,))
+    result = cursor.fetchone()
+
+    if result:
+        entity_id = result[0]
+        logger.debug(f"{table} existant trouvé : '{name}' (ID: {entity_id})")
+        return entity_id
+
+    # Insérer nouvelle entité
+    if extra_field and extra_value is not None:
+        cursor.execute(
+            f"INSERT INTO {table} (nom, {extra_field}) VALUES (?, ?)",
+            (name, extra_value)
+        )
+    else:
+        cursor.execute(
+            f"INSERT INTO {table} (nom) VALUES (?)",
+            (name,)
+        )
+
+    entity_id = cursor.lastrowid
+    logger.info(f"Nouvelle entrée dans {table} : '{name}' (ID: {entity_id})")
+    return entity_id
 
 
 def insert_site(nom: str, pays: Optional[str] = None) -> int:
@@ -125,23 +183,16 @@ def insert_site(nom: str, pays: Optional[str] = None) -> int:
     conn = get_connection()
     cursor = conn.cursor()
 
-    # Vérifier si le site existe déjà
-    cursor.execute("SELECT id FROM sites WHERE nom = ?", (nom,))
-    result = cursor.fetchone()
-
-    if result:
-        site_id = result[0]
-    else:
-        # Insérer nouveau site
-        cursor.execute(
-            "INSERT INTO sites (nom, pays) VALUES (?, ?)",
-            (nom, pays)
-        )
-        site_id = cursor.lastrowid
+    try:
+        site_id = _insert_or_get_entity(cursor, 'sites', nom, 'pays', pays)
         conn.commit()
-
-    conn.close()
-    return site_id
+        return site_id
+    except sqlite3.Error as e:
+        logger.error(f"Erreur lors de l'insertion du site '{nom}' : {e}")
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def insert_buddy(nom: str, niveau: Optional[str] = None) -> int:
@@ -158,21 +209,16 @@ def insert_buddy(nom: str, niveau: Optional[str] = None) -> int:
     conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT id FROM buddies WHERE nom = ?", (nom,))
-    result = cursor.fetchone()
-
-    if result:
-        buddy_id = result[0]
-    else:
-        cursor.execute(
-            "INSERT INTO buddies (nom, niveau_certification) VALUES (?, ?)",
-            (nom, niveau)
-        )
-        buddy_id = cursor.lastrowid
+    try:
+        buddy_id = _insert_or_get_entity(cursor, 'buddies', nom, 'niveau_certification', niveau)
         conn.commit()
-
-    conn.close()
-    return buddy_id
+        return buddy_id
+    except sqlite3.Error as e:
+        logger.error(f"Erreur lors de l'insertion du buddy '{nom}' : {e}")
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def insert_tag(nom: str, categorie: Optional[str] = None) -> int:
@@ -189,21 +235,16 @@ def insert_tag(nom: str, categorie: Optional[str] = None) -> int:
     conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT id FROM tags WHERE nom = ?", (nom,))
-    result = cursor.fetchone()
-
-    if result:
-        tag_id = result[0]
-    else:
-        cursor.execute(
-            "INSERT INTO tags (nom, categorie) VALUES (?, ?)",
-            (nom, categorie)
-        )
-        tag_id = cursor.lastrowid
+    try:
+        tag_id = _insert_or_get_entity(cursor, 'tags', nom, 'categorie', categorie)
         conn.commit()
-
-    conn.close()
-    return tag_id
+        return tag_id
+    except sqlite3.Error as e:
+        logger.error(f"Erreur lors de l'insertion du tag '{nom}' : {e}")
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def insert_dive(dive_data: Dict[str, Any]) -> int:
@@ -245,26 +286,12 @@ def insert_dive(dive_data: Dict[str, Any]) -> int:
 
     try:
         # 1. Insérer/récupérer site
-        cursor.execute("SELECT id FROM sites WHERE nom = ?", (dive_data['site_nom'],))
-        result = cursor.fetchone()
-        if result:
-            site_id = result[0]
-        else:
-            cursor.execute("INSERT INTO sites (nom, pays) VALUES (?, ?)",
-                         (dive_data['site_nom'], None))
-            site_id = cursor.lastrowid
+        site_id = _insert_or_get_entity(cursor, 'sites', dive_data['site_nom'])
 
         # 2. Insérer/récupérer buddy (optionnel)
         buddy_id = None
         if dive_data.get('buddy_nom'):
-            cursor.execute("SELECT id FROM buddies WHERE nom = ?", (dive_data['buddy_nom'],))
-            result = cursor.fetchone()
-            if result:
-                buddy_id = result[0]
-            else:
-                cursor.execute("INSERT INTO buddies (nom, niveau_certification) VALUES (?, ?)",
-                             (dive_data['buddy_nom'], None))
-                buddy_id = cursor.lastrowid
+            buddy_id = _insert_or_get_entity(cursor, 'buddies', dive_data['buddy_nom'])
 
         # 3. Insérer la plongée
         cursor.execute("""
@@ -300,15 +327,8 @@ def insert_dive(dive_data: Dict[str, Any]) -> int:
         # 4. Insérer les tags (many-to-many)
         if dive_data.get('tags'):
             for tag_nom in dive_data['tags']:
-                # Vérifier si tag existe
-                cursor.execute("SELECT id FROM tags WHERE nom = ?", (tag_nom,))
-                result = cursor.fetchone()
-                if result:
-                    tag_id = result[0]
-                else:
-                    cursor.execute("INSERT INTO tags (nom, categorie) VALUES (?, ?)",
-                                 (tag_nom, None))
-                    tag_id = cursor.lastrowid
+                # Insérer ou récupérer le tag
+                tag_id = _insert_or_get_entity(cursor, 'tags', tag_nom)
 
                 # Lier tag à plongée
                 cursor.execute(
@@ -317,11 +337,13 @@ def insert_dive(dive_data: Dict[str, Any]) -> int:
                 )
 
         conn.commit()
+        logger.info(f"Plongée insérée avec succès (ID: {dive_id})")
         return dive_id
 
     except Exception as e:
+        logger.error(f"Erreur lors de l'insertion de la plongée : {e}", exc_info=True)
         conn.rollback()
-        raise e
+        raise
     finally:
         conn.close()
 
@@ -439,26 +461,12 @@ def update_dive(dive_id: int, dive_data: Dict[str, Any]) -> bool:
 
     try:
         # 1. Insérer/récupérer site
-        cursor.execute("SELECT id FROM sites WHERE nom = ?", (dive_data['site_nom'],))
-        result = cursor.fetchone()
-        if result:
-            site_id = result[0]
-        else:
-            cursor.execute("INSERT INTO sites (nom, pays) VALUES (?, ?)",
-                         (dive_data['site_nom'], None))
-            site_id = cursor.lastrowid
+        site_id = _insert_or_get_entity(cursor, 'sites', dive_data['site_nom'])
 
         # 2. Insérer/récupérer buddy (optionnel)
         buddy_id = None
         if dive_data.get('buddy_nom'):
-            cursor.execute("SELECT id FROM buddies WHERE nom = ?", (dive_data['buddy_nom'],))
-            result = cursor.fetchone()
-            if result:
-                buddy_id = result[0]
-            else:
-                cursor.execute("INSERT INTO buddies (nom, niveau_certification) VALUES (?, ?)",
-                             (dive_data['buddy_nom'], None))
-                buddy_id = cursor.lastrowid
+            buddy_id = _insert_or_get_entity(cursor, 'buddies', dive_data['buddy_nom'])
 
         # 3. Mettre à jour la plongée
         cursor.execute("""
@@ -489,15 +497,8 @@ def update_dive(dive_id: int, dive_data: Dict[str, Any]) -> bool:
 
         if dive_data.get('tags'):
             for tag_nom in dive_data['tags']:
-                # Vérifier si tag existe
-                cursor.execute("SELECT id FROM tags WHERE nom = ?", (tag_nom,))
-                result = cursor.fetchone()
-                if result:
-                    tag_id = result[0]
-                else:
-                    cursor.execute("INSERT INTO tags (nom, categorie) VALUES (?, ?)",
-                                 (tag_nom, None))
-                    tag_id = cursor.lastrowid
+                # Insérer ou récupérer le tag
+                tag_id = _insert_or_get_entity(cursor, 'tags', tag_nom)
 
                 cursor.execute(
                     "INSERT INTO dive_tags (dive_id, tag_id) VALUES (?, ?)",
@@ -505,11 +506,12 @@ def update_dive(dive_id: int, dive_data: Dict[str, Any]) -> bool:
                 )
 
         conn.commit()
+        logger.info(f"Plongée {dive_id} mise à jour avec succès")
         return True
 
     except Exception as e:
+        logger.error(f"Erreur lors de la mise à jour de la plongée {dive_id} : {e}", exc_info=True)
         conn.rollback()
-        print(f"Erreur update_dive: {e}")
         return False
     finally:
         conn.close()
@@ -535,10 +537,11 @@ def delete_dive(dive_id: int) -> bool:
         conn.commit()
         conn.close()
 
+        logger.info(f"Plongée {dive_id} supprimée avec succès")
         return True
 
     except Exception as e:
-        print(f"Erreur delete_dive: {e}")
+        logger.error(f"Erreur lors de la suppression de la plongée {dive_id} : {e}", exc_info=True)
         return False
 
 
