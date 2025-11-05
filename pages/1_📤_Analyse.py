@@ -421,6 +421,12 @@ if uploaded_file is not None:
                             try:
                                 dive_id = database.insert_dive(dive_data)
                                 st.success(f"✅ Plongée enregistrée avec succès (ID: {dive_id})")
+
+                                # Sauvegarder le DataFrame en cache pour améliorer les performances futures (Phase 2)
+                                cache_saved = database.save_dive_cache(dive_id, df)
+                                if cache_saved:
+                                    logger.info(f"DataFrame mis en cache pour la plongée {dive_id}")
+
                                 st.info("💡 Utilisez 'Analyser une autre plongée' pour continuer")
                                 logger.info(f"Plongée sauvegardée : ID {dive_id}, site: {site_nom}")
                             except Exception as e:

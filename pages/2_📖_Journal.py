@@ -220,26 +220,42 @@ else:
                         import visualizer
                         import analyzer
 
-                        # Créer un objet fichier simulé pour le parser
-                        class FakeUploadedFile:
-                            def __init__(self, path):
-                                self.name = path.name
-                                self._content = None
-                                self._path = path
+                        # === PHASE 2 : Essayer de charger depuis le cache d'abord ===
+                        df = database.get_dive_cache(plongee_selectionnee)
 
-                            def read(self):
-                                if self._content is None:
-                                    with open(self._path, 'rb') as f:
-                                        self._content = f.read()
-                                return self._content
+                        if df is None:
+                            # Cache miss : parser le fichier
+                            logger.info(f"Cache miss pour plongée {plongee_selectionnee}, parsing du fichier...")
 
-                            def seek(self, pos):
-                                pass
+                            # Créer un objet fichier simulé pour le parser
+                            class FakeUploadedFile:
+                                def __init__(self, path):
+                                    self.name = path.name
+                                    self._content = None
+                                    self._path = path
 
-                        fake_file = FakeUploadedFile(file_path)
+                                def read(self):
+                                    if self._content is None:
+                                        with open(self._path, 'rb') as f:
+                                            self._content = f.read()
+                                    return self._content
 
-                        # Parser le fichier
-                        df = dive_parser.parse_dive_file(fake_file)
+                                def seek(self, pos):
+                                    pass
+
+                            fake_file = FakeUploadedFile(file_path)
+
+                            # Parser le fichier
+                            df = dive_parser.parse_dive_file(fake_file)
+
+                            # Sauvegarder en cache pour la prochaine fois
+                            if not df.empty:
+                                database.save_dive_cache(plongee_selectionnee, df)
+                                logger.info(f"DataFrame mis en cache pour plongée {plongee_selectionnee}")
+                        else:
+                            # Cache hit : afficher un message de succès
+                            st.success("⚡ Données chargées depuis le cache (rapide!)")
+                            logger.info(f"Cache hit pour plongée {plongee_selectionnee}")
 
                         if not df.empty:
                             # Afficher le graphique
