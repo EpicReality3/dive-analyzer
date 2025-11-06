@@ -31,6 +31,22 @@ Application web complète pour analyser vos plongées et gérer votre journal de
   - **✏️ Éditer** : Modification des annotations et suppression
 - Tags personnalisables et dynamiques
 
+### 🗺️ Carte des Sites de Plongée
+- Carte interactive mondiale avec Folium
+- Visualisation de tous les sites de plongée
+- Marqueurs colorés selon le nombre de plongées :
+  - 🔵 Bleu : 1-4 plongées
+  - 🟠 Orange : 5-9 plongées
+  - 🔴 Rouge : 10+ plongées
+- Popups détaillés avec statistiques par site :
+  - Nombre de plongées, profondeur max/moyenne
+  - Température, SAC moyen, note moyenne
+  - Dates première/dernière plongée
+- Gestion des coordonnées GPS :
+  - Édition des coordonnées pour chaque site
+  - Validation automatique des coordonnées
+- Statistiques globales : sites totaux, pays visités, sites géolocalisés
+
 ## Installation
 
 ### Prérequis
@@ -66,9 +82,10 @@ L'application sera accessible à l'adresse : `http://localhost:8501`
 
 ### Navigation
 
-1. **Page d'accueil** : Choix entre Analyse ou Journal
+1. **Page d'accueil** : Choix entre Analyse, Journal ou Carte
 2. **Analyse** : Uploadez un fichier de plongée → Analysez → Annotez → Sauvegardez
 3. **Journal** : Consultez, filtrez, visualisez et éditez vos plongées
+4. **Carte** : Visualisez vos sites de plongée sur une carte interactive et gérez les coordonnées GPS
 
 ## Architecture
 
@@ -77,7 +94,8 @@ dive-analyzer/
 ├── app.py                   # Page d'accueil
 ├── pages/
 │   ├── 1_📤_Analyse.py      # Page d'analyse
-│   └── 2_📖_Journal.py      # Journal de plongée
+│   ├── 2_📖_Journal.py      # Journal de plongée
+│   └── 3_🗺️_Carte.py        # Carte des sites
 ├── database.py              # Module SQLite (CRUD)
 ├── parser.py                # Parsers FIT/UDDF/XML/DL7
 ├── visualizer.py            # Graphiques Plotly
@@ -101,6 +119,7 @@ Chemin DB : `~/dive-analyzer/dive_log.db`
 
 - **Streamlit** : Interface web
 - **Plotly** : Graphiques interactifs
+- **Folium** : Cartes interactives (OpenStreetMap)
 - **Pandas** : Manipulation de données
 - **SQLite** : Base de données locale
 - **FitParse** : Parser FIT (Garmin, Suunto, etc.)
@@ -125,8 +144,17 @@ Les contributions sont les bienvenues ! N'hésitez pas à ouvrir une issue ou un
 
 ## Roadmap
 
+### ✅ Réalisé
+- [x] Carte interactive des sites de plongée (Folium)
+- [x] Gestion des coordonnées GPS
+- [x] Statistiques par site
+
+### 🚀 À venir
 - [ ] Export PDF du journal
 - [ ] Statistiques avancées (graphes progression)
+- [ ] Import automatique coordonnées GPS depuis fichiers FIT
 - [ ] Support Bluetooth ordinateur de plongée
 - [ ] Mode multi-utilisateurs
 - [ ] Intégration API météo marine
+- [ ] Clustering des sites proches sur la carte
+- [ ] Export KML/GPX des sites de plongée

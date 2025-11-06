@@ -746,6 +746,124 @@ def get_cache_stats() -> Dict[str, Any]:
         return {}
 
 
+def get_all_sites_with_stats() -> List[Dict[str, Any]]:
+    """
+    Récupère tous les sites de plongée avec leurs statistiques agrégées.
+
+    Returns:
+        Liste de dictionnaires contenant les informations et statistiques de chaque site
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        query = """
+            SELECT
+                sites.id,
+                sites.nom,
+                sites.pays,
+                sites.coordonnees_gps,
+                COUNT(dives.id) AS nombre_plongees,
+                MAX(dives.profondeur_max) AS profondeur_max,
+                AVG(dives.profondeur_max) AS profondeur_moyenne,
+                AVG(dives.duree_minutes) AS duree_moyenne,
+                AVG(dives.temperature_min) AS temperature_moyenne,
+                AVG(dives.sac) AS sac_moyen,
+                AVG(dives.rating) AS note_moyenne,
+                MIN(dives.date) AS premiere_plongee,
+                MAX(dives.date) AS derniere_plongee
+            FROM sites
+            LEFT JOIN dives ON sites.id = dives.site_id
+            GROUP BY sites.id, sites.nom, sites.pays, sites.coordonnees_gps
+            ORDER BY nombre_plongees DESC
+        """
+
+        cursor.execute(query)
+        columns = [description[0] for description in cursor.description]
+        rows = cursor.fetchall()
+
+        sites = []
+        for row in rows:
+            site_dict = dict(zip(columns, row))
+            sites.append(site_dict)
+
+        conn.close()
+        logger.debug(f"Récupération de {len(sites)} sites avec statistiques")
+        return sites
+
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération des sites avec stats : {e}", exc_info=True)
+        return []
+
+
+def update_site_coordinates(site_id: int, coordonnees_gps: str) -> bool:
+    """
+    Met à jour les coordonnées GPS d'un site de plongée.
+
+    Args:
+        site_id: ID du site
+        coordonnees_gps: Coordonnées au format "latitude,longitude" (ex: "43.0242,5.5485")
+
+    Returns:
+        True si succès, False sinon
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(
+            "UPDATE sites SET coordonnees_gps = ? WHERE id = ?",
+            (coordonnees_gps, site_id)
+        )
+
+        conn.commit()
+        conn.close()
+
+        logger.info(f"Coordonnées GPS mises à jour pour le site {site_id}")
+        return True
+
+    except Exception as e:
+        logger.error(f"Erreur lors de la mise à jour des coordonnées du site {site_id} : {e}", exc_info=True)
+        return False
+
+
+def get_site_by_name(site_name: str) -> Optional[Dict[str, Any]]:
+    """
+    Récupère un site par son nom.
+
+    Args:
+        site_name: Nom du site
+
+    Returns:
+        Dictionnaire avec les informations du site ou None si non trouvé
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(
+            "SELECT id, nom, pays, coordonnees_gps FROM sites WHERE nom = ?",
+            (site_name,)
+        )
+
+        row = cursor.fetchone()
+        conn.close()
+
+        if not row:
+            return None
+
+        return {
+            'id': row[0],
+            'nom': row[1],
+            'pays': row[2],
+            'coordonnees_gps': row[3]
+        }
+
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération du site '{site_name}' : {e}", exc_info=True)
+        return None
+
+
 # Initialiser la base au premier import (seulement si elle n'existe pas)
 if not DB_PATH.exists():
     init_database()
