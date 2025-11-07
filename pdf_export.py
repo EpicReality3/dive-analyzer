@@ -27,6 +27,8 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import requests
 from urllib.parse import quote
+import contextily as ctx
+from pyproj import Transformer
 
 import database
 import media_manager
@@ -518,38 +520,65 @@ def _add_location_map(c: canvas.Canvas, dive_data: Dict[str, Any], y: float) -> 
 
         c.setFillColor(colors.black)
 
-        # Créer une carte simple avec matplotlib
-        fig_map, ax_map = plt.subplots(figsize=(8, 4), dpi=150)
+        # Créer une carte avec tuiles OpenStreetMap
+        fig_map, ax_map = plt.subplots(figsize=(8, 4.5), dpi=150)
 
-        # Créer une carte basique avec un marqueur
-        # Utiliser un fond bleu pour l'océan
-        ax_map.set_xlim(lon - 0.05, lon + 0.05)
-        ax_map.set_ylim(lat - 0.025, lat + 0.025)
-        ax_map.set_facecolor('#b3d9ff')  # Bleu clair pour l'eau
+        # Convertir les coordonnées WGS84 (lat/lon) en Web Mercator (EPSG:3857)
+        transformer = Transformer.from_crs("EPSG:4326", "EPSG:3857", always_xy=True)
+        map_x, map_y = transformer.transform(lon, lat)
 
-        # Ajouter un marqueur rouge pour le site
-        ax_map.plot(lon, lat, 'ro', markersize=15, label=dive_data['site_nom'],
-                   markeredgecolor='white', markeredgewidth=2, zorder=5)
+        # Définir les limites de la carte (environ 10km autour du point)
+        # 0.1 degré ≈ 11km à l'équateur
+        buffer = 0.15  # Zoom modéré pour voir le contexte géographique
+        lon_min, lon_max = lon - buffer, lon + buffer
+        lat_min, lat_max = lat - buffer * 0.6, lat + buffer * 0.6  # Ratio aspect
 
-        # Ajouter une grille
-        ax_map.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
+        # Convertir les limites en Web Mercator
+        x_min, y_min = transformer.transform(lon_min, lat_min)
+        x_max, y_max = transformer.transform(lon_max, lat_max)
 
-        # Labels
-        ax_map.set_xlabel('Longitude', fontsize=10, weight='bold')
-        ax_map.set_ylabel('Latitude', fontsize=10, weight='bold')
-        ax_map.set_title(f'Site: {dive_data["site_nom"]}', fontsize=11, weight='bold', pad=10)
+        # Configurer les limites de la carte
+        ax_map.set_xlim(x_min, x_max)
+        ax_map.set_ylim(y_min, y_max)
 
-        # Ajouter les coordonnées en texte
-        coord_text = f'📍 {lat:.4f}°, {lon:.4f}°'
+        # Ajouter le fond de carte OpenStreetMap
+        try:
+            ctx.add_basemap(
+                ax_map,
+                crs="EPSG:3857",
+                source=ctx.providers.OpenStreetMap.Mapnik,
+                attribution=False,
+                zoom='auto'
+            )
+        except Exception as e:
+            logger.warning(f"Impossible de télécharger les tuiles OSM: {e}")
+            # Fallback: fond bleu si pas d'internet
+            ax_map.set_facecolor('#b3d9ff')
+
+        # Ajouter un marqueur rouge avec bordure blanche pour le site
+        ax_map.plot(map_x, map_y, 'o', color='#d62728', markersize=18,
+                   markeredgecolor='white', markeredgewidth=3, zorder=10)
+
+        # Ajouter un point central plus petit
+        ax_map.plot(map_x, map_y, 'o', color='white', markersize=6, zorder=11)
+
+        # Ajouter le nom du site et du pays en haut de la carte
+        title_parts = [dive_data['site_nom']]
+        if site_data.get('pays'):
+            title_parts.append(site_data['pays'])
+
+        ax_map.set_title(' - '.join(title_parts),
+                        fontsize=12, weight='bold', pad=15)
+
+        # Ajouter les coordonnées en bas
+        coord_text = f'📍 {lat:.5f}°N, {lon:.5f}°E'
         ax_map.text(0.5, 0.02, coord_text, transform=ax_map.transAxes,
-                   ha='center', va='bottom', fontsize=9,
-                   bbox=dict(boxstyle='round,pad=0.5', facecolor='white', alpha=0.8))
+                   ha='center', va='bottom', fontsize=9, weight='bold',
+                   bbox=dict(boxstyle='round,pad=0.6', facecolor='white',
+                            edgecolor='#1f77b4', linewidth=2, alpha=0.95))
 
-        # Légende
-        ax_map.legend(loc='upper right', fontsize=9)
-
-        # Note : Pour une meilleure carte, on pourrait télécharger une tuile OSM
-        # mais cela nécessiterait une connexion internet et des packages supplémentaires
+        # Désactiver les axes pour un look plus propre
+        ax_map.set_axis_off()
 
         # Convertir en PNG
         buf_map = io.BytesIO()
