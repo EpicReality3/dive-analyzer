@@ -12,7 +12,7 @@ from pathlib import Path
 
 # Déterminer le chemin de la base de données
 APP_DIR = Path.home() / "dive-analyzer"
-DB_PATH = APP_DIR / "dive_analyzer.db"
+DB_PATH = APP_DIR / "dive_log.db"
 
 
 def get_connection() -> sqlite3.Connection:

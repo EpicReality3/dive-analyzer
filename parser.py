@@ -316,7 +316,7 @@ class XmlParser(BaseDiveParser):
                 value_elem = element.find(f'{{{tag}}}')
             if value_elem is None:
                 # Essayer avec wildcard namespace
-                value_elem = element.find(f'{{{*}}}{tag}')
+                value_elem = element.find(f'{{*}}{tag}')
 
             if value_elem is not None and value_elem.text:
                 return value_elem.text.strip()

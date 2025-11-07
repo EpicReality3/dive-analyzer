@@ -6,6 +6,7 @@ import streamlit as st
 import database
 import media_manager
 import species_recognition
+import species_api
 from pathlib import Path
 from datetime import datetime
 from logger import get_logger
@@ -29,8 +30,14 @@ st.title("📸 Galerie Média")
 # Initialiser les répertoires média
 media_manager.init_media_directories()
 
+# Lien vers le catalogue d'espèces
+if st.button("🐠 Voir le Catalogue des Espèces", use_container_width=True, type="secondary"):
+    st.switch_page("pages/7_🐠_Catalogue_Espèces.py")
+
+st.divider()
+
 # Onglets principaux
-tab_gallery, tab_upload, tab_species = st.tabs(["🖼️ Galerie", "⬆️ Upload", "🐠 Espèces"])
+tab_gallery, tab_upload = st.tabs(["🖼️ Galerie", "⬆️ Upload"])
 
 # ===== ONGLET GALERIE =====
 with tab_gallery:
@@ -122,12 +129,375 @@ with tab_gallery:
                         st.caption(f"📍 {media['site_nom']}")
                         st.caption(f"📅 {media['dive_date']}")
 
-                        if media['description']:
-                            st.caption(f"💬 {media['description']}")
+                        # Annotation complète : description + espèces
+                        with st.expander("📝 Annotation & Espèces", expanded=bool(media['description'])):
 
-                        # Bouton pour voir les détails
-                        if st.button(f"ℹ️ Détails", key=f"details_{media['id']}"):
-                            st.session_state.selected_media_id = media['id']
+                            # === SECTION 1 : DESCRIPTION ===
+                            st.markdown("#### 📄 Description")
+                            current_description = media['description'] or ""
+
+                            # Zone de texte pour la description
+                            new_description = st.text_area(
+                                "Description de l'image",
+                                value=current_description,
+                                key=f"desc_{media['id']}",
+                                height=80,
+                                placeholder="Décrivez l'ambiance, le contexte, les éléments visuels..."
+                            )
+
+                            # Boutons pour la description
+                            desc_col1, desc_col2 = st.columns(2)
+                            with desc_col1:
+                                if media['type'] == 'photo':
+                                    if st.button("🤖 Générer description IA", key=f"gen_desc_{media['id']}", use_container_width=True):
+                                        api_key = database.get_setting("anthropic_api_key", "")
+                                        if not api_key:
+                                            st.error("⚠️ Clé API non configurée")
+                                        else:
+                                            with st.spinner("Génération..."):
+                                                filepath = Path(media['filepath'])
+                                                if filepath.exists():
+                                                    generated_desc = species_recognition.generate_image_description(filepath)
+                                                    if generated_desc:
+                                                        if media_manager.update_media_description(media['id'], generated_desc):
+                                                            st.success("✅ Description générée !")
+                                                            st.rerun()
+                            with desc_col2:
+                                if st.button("💾 Sauvegarder description", key=f"save_desc_{media['id']}", use_container_width=True):
+                                    if media_manager.update_media_description(media['id'], new_description):
+                                        st.success("✅ Sauvegardée !")
+                                        st.rerun()
+
+                            st.divider()
+
+                            # === SECTION 2 : ESPÈCES IDENTIFIÉES ===
+                            st.markdown("#### 🐠 Espèces identifiées sur cette photo")
+
+                            # Récupérer les espèces déjà identifiées sur ce média
+                            media_species = species_recognition.get_media_species(media['id'])
+
+                            if media_species:
+                                st.markdown(f"**{len(media_species)} espèce(s) identifiée(s) :**")
+                                for sp in media_species:
+                                    confidence_badge = ""
+                                    if sp['confidence_score']:
+                                        confidence_badge = f" ({sp['confidence_score']:.0%})"
+
+                                    source_icon = {
+                                        'ai': '🤖',
+                                        'manual': '✍️',
+                                        'verified': '✅'
+                                    }.get(sp['detected_by'], '❓')
+
+                                    # Créer une colonne pour l'espèce et le bouton de validation
+                                    sp_col1, sp_col2 = st.columns([4, 1])
+
+                                    with sp_col1:
+                                        st.write(f"{source_icon} **{sp['common_name_fr'] or sp['scientific_name']}** "
+                                                f"({sp['scientific_name']}){confidence_badge}")
+
+                                    with sp_col2:
+                                        # Bouton de validation WoRMS
+                                        if st.button("🔍", key=f"validate_{sp['id']}_{media['id']}",
+                                                   help="Valider avec WoRMS"):
+                                            st.session_state[f'show_validation_{sp["id"]}_{media["id"]}'] = True
+
+                                    # Afficher les résultats de validation si demandé
+                                    if st.session_state.get(f'show_validation_{sp["id"]}_{media["id"]}', False):
+                                        with st.spinner("Validation WoRMS en cours..."):
+                                            comparison = species_api.compare_with_ai_detection(
+                                                sp['scientific_name'],
+                                                sp['confidence_score'] or 0.0
+                                            )
+
+                                            # Afficher les résultats
+                                            if comparison['worms_found']:
+                                                details = comparison['details']
+
+                                                # Badge de qualité
+                                                if comparison['match_quality'] == 'perfect':
+                                                    st.success("✅ **Validation WoRMS : PARFAITE**")
+                                                elif comparison['match_quality'] == 'synonym':
+                                                    st.warning(f"⚠️ **Synonyme détecté** - Nom valide : **{comparison['recommended_name']}**")
+                                                else:
+                                                    st.info(f"ℹ️ **Statut : {comparison['worms_status']}**")
+
+                                                # Informations taxonomiques
+                                                st.markdown("**📚 Informations WoRMS**")
+                                                st.markdown(f"**AphiaID:** {details['details']['aphia_id']}")
+                                                st.markdown(f"**Nom scientifique:** {details['details']['scientific_name']}")
+                                                if details['details']['authority']:
+                                                    st.markdown(f"**Autorité:** {details['details']['authority']}")
+
+                                                # Taxonomie
+                                                tax_parts = []
+                                                if details['details'].get('family'):
+                                                    tax_parts.append(f"Famille: {details['details']['family']}")
+                                                if details['details'].get('order'):
+                                                    tax_parts.append(f"Ordre: {details['details']['order']}")
+                                                if details['details'].get('class'):
+                                                    tax_parts.append(f"Classe: {details['details']['class']}")
+
+                                                if tax_parts:
+                                                    st.markdown(" | ".join(tax_parts))
+
+                                                # Noms communs
+                                                if details['details'].get('common_names'):
+                                                    names_str = ", ".join(details['details']['common_names'])
+                                                    st.markdown(f"**Noms communs:** {names_str}")
+
+                                                # Habitat
+                                                habitat_tags = []
+                                                if details['details'].get('isMarine'):
+                                                    habitat_tags.append("🌊 Marin")
+                                                if details['details'].get('isBrackish'):
+                                                    habitat_tags.append("💧 Saumâtre")
+                                                if details['details'].get('isFreshwater'):
+                                                    habitat_tags.append("🏞️ Eau douce")
+
+                                                if habitat_tags:
+                                                    st.markdown(" ".join(habitat_tags))
+
+                                                # Lien WoRMS
+                                                if details['details'].get('url'):
+                                                    st.markdown(f"[🔗 Voir sur WoRMS]({details['details']['url']})")
+
+                                                st.markdown("---")
+
+                                                # Recommandation
+                                                if comparison['should_verify']:
+                                                    st.warning("💡 **Recommandation:** Vérification manuelle conseillée "
+                                                             f"(confiance IA: {sp['confidence_score']:.0%})")
+                                            else:
+                                                st.error("❌ **Espèce non trouvée dans WoRMS**")
+                                                st.info("💡 Cette espèce n'est pas référencée dans la base de données "
+                                                       "marine mondiale. Vérifiez l'orthographe du nom scientifique.")
+                            else:
+                                st.info("Aucune espèce identifiée sur cette photo")
+
+                            st.markdown("---")
+
+                            # Boutons d'action pour les espèces
+                            sp_col1, sp_col2, sp_col3 = st.columns(3)
+
+                            with sp_col1:
+                                # Analyse IA des espèces
+                                if media['type'] == 'photo':
+                                    if st.button("🤖 Analyser espèces IA", key=f"ai_sp_{media['id']}", use_container_width=True):
+                                        api_key = database.get_setting("anthropic_api_key", "")
+                                        if not api_key:
+                                            st.error("⚠️ Clé API non configurée")
+                                        else:
+                                            with st.spinner("Analyse IA en cours..."):
+                                                filepath = Path(media['filepath'])
+                                                if filepath.exists():
+                                                    detected_species = species_recognition.analyze_image_with_ai(filepath)
+
+                                                    if detected_species:
+                                                        added_count = 0
+                                                        for sp in detected_species:
+                                                            species_id = species_recognition.add_or_get_species(
+                                                                scientific_name=sp.get('scientific_name'),
+                                                                common_name_fr=sp.get('common_name_fr'),
+                                                                common_name_en=sp.get('common_name_en'),
+                                                                category=sp.get('category')
+                                                            )
+
+                                                            if species_id:
+                                                                if species_recognition.add_species_to_dive(
+                                                                    dive_id=media['dive_id'],
+                                                                    species_id=species_id,
+                                                                    media_id=media['id'],
+                                                                    confidence_score=sp.get('confidence', 0.5),
+                                                                    detected_by='ai'
+                                                                ):
+                                                                    added_count += 1
+
+                                                        st.success(f"✅ {added_count} espèce(s) ajoutée(s) !")
+                                                        st.rerun()
+                                                    else:
+                                                        st.warning("Aucune espèce détectée")
+
+                            with sp_col2:
+                                # Ajouter manuellement une espèce
+                                if st.button("➕ Ajouter espèce", key=f"add_sp_{media['id']}", use_container_width=True):
+                                    st.session_state[f'show_add_species_{media["id"]}'] = True
+
+                            with sp_col3:
+                                # Accès au catalogue
+                                if st.button("📚 Catalogue", key=f"catalogue_{media['id']}", use_container_width=True):
+                                    st.session_state[f'show_catalogue_{media["id"]}'] = True
+
+                            # Formulaire d'ajout manuel d'espèce
+                            if st.session_state.get(f'show_add_species_{media["id"]}', False):
+                                st.markdown("##### Ajouter une espèce")
+
+                                with st.form(key=f"add_species_form_{media['id']}"):
+                                    # Recherche d'espèce existante
+                                    search_sp = st.text_input("Rechercher une espèce", key=f"search_sp_{media['id']}")
+
+                                    selected_species_id = None
+                                    if search_sp and len(search_sp) >= 2:
+                                        results = species_recognition.search_species(search_sp, limit=5)
+                                        if results:
+                                            species_choices = {
+                                                f"{sp['common_name_fr']} ({sp['scientific_name']})": sp['id']
+                                                for sp in results
+                                            }
+                                            selected = st.selectbox("Sélectionner", options=list(species_choices.keys()))
+                                            if selected:
+                                                selected_species_id = species_choices[selected]
+
+                                    quantity = st.number_input("Quantité observée", min_value=1, value=1)
+                                    notes = st.text_input("Notes (optionnel)")
+
+                                    col1, col2 = st.columns(2)
+                                    with col1:
+                                        submit = st.form_submit_button("✅ Ajouter", use_container_width=True)
+                                    with col2:
+                                        cancel = st.form_submit_button("❌ Annuler", use_container_width=True)
+
+                                    if submit and selected_species_id:
+                                        if species_recognition.add_species_to_dive(
+                                            dive_id=media['dive_id'],
+                                            species_id=selected_species_id,
+                                            media_id=media['id'],
+                                            quantity=quantity,
+                                            notes=notes,
+                                            detected_by='manual'
+                                        ):
+                                            st.success("✅ Espèce ajoutée !")
+                                            st.session_state[f'show_add_species_{media["id"]}'] = False
+                                            st.rerun()
+
+                                    if cancel:
+                                        st.session_state[f'show_add_species_{media["id"]}'] = False
+                                        st.rerun()
+
+                            # Section Catalogue d'espèces
+                            if st.session_state.get(f'show_catalogue_{media["id"]}', False):
+                                st.markdown("---")
+                                st.markdown("##### 📚 Catalogue des Espèces Marines")
+
+                                # Mini catalogue avec recherche et ajout rapide
+                                cat_tab1, cat_tab2, cat_tab3 = st.tabs(["🔍 Rechercher", "➕ Créer nouvelle espèce", "📊 Statistiques"])
+
+                                with cat_tab1:
+                                    st.markdown("**Rechercher dans le catalogue**")
+
+                                    # Recherche
+                                    search_query = st.text_input(
+                                        "Nom scientifique ou commun",
+                                        key=f"cat_search_{media['id']}",
+                                        placeholder="Ex: Amphiprion, poisson-clown..."
+                                    )
+
+                                    if search_query and len(search_query) >= 2:
+                                        results = species_recognition.search_species(search_query, limit=10)
+
+                                        if results:
+                                            st.markdown(f"**{len(results)} résultat(s) trouvé(s) :**")
+
+                                            for sp in results:
+                                                with st.expander(f"{sp['common_name_fr'] or sp['scientific_name']} ({sp['scientific_name']})"):
+                                                    st.markdown(f"**Catégorie:** {sp['category']}")
+                                                    if sp['description']:
+                                                        st.markdown(f"**Description:** {sp['description'][:200]}...")
+
+                                                    # Bouton pour valider avec WoRMS
+                                                    if st.button("🔍 Valider avec WoRMS",
+                                                               key=f"worms_val_{sp['id']}_{media['id']}"):
+                                                        with st.spinner("Recherche WoRMS..."):
+                                                            worms_info = species_api.get_species_info_summary(sp['scientific_name'])
+                                                            if worms_info:
+                                                                st.markdown(worms_info)
+                                                            else:
+                                                                st.warning("Espèce non trouvée dans WoRMS")
+
+                                                    # Bouton pour ajouter à cette photo
+                                                    if st.button("➕ Ajouter à cette photo",
+                                                               key=f"add_cat_{sp['id']}_{media['id']}",
+                                                               type="primary"):
+                                                        if species_recognition.add_species_to_dive(
+                                                            dive_id=media['dive_id'],
+                                                            species_id=sp['id'],
+                                                            media_id=media['id'],
+                                                            detected_by='manual'
+                                                        ):
+                                                            st.success("✅ Espèce ajoutée à cette photo !")
+                                                            st.session_state[f'show_catalogue_{media["id"]}'] = False
+                                                            st.rerun()
+                                        else:
+                                            st.info("Aucune espèce trouvée. Essayez de créer une nouvelle espèce.")
+
+                                with cat_tab2:
+                                    st.markdown("**Créer une nouvelle espèce dans le catalogue**")
+
+                                    with st.form(key=f"new_species_catalogue_{media['id']}"):
+                                        new_sci = st.text_input("Nom scientifique *", key=f"new_sci_{media['id']}")
+                                        new_fr = st.text_input("Nom français", key=f"new_fr_{media['id']}")
+                                        new_en = st.text_input("Nom anglais", key=f"new_en_{media['id']}")
+                                        new_cat = st.selectbox(
+                                            "Catégorie *",
+                                            ['poisson', 'corail', 'mollusque', 'crustacé',
+                                             'échinoderme', 'mammifère', 'reptile', 'autre'],
+                                            key=f"new_cat_{media['id']}"
+                                        )
+
+                                        # Recherche WoRMS pour aide
+                                        if new_sci and len(new_sci) >= 3:
+                                            st.info("💡 Validation WoRMS recommandée après création")
+
+                                        submit_new = st.form_submit_button("➕ Créer l'espèce", type="primary")
+
+                                        if submit_new and new_sci:
+                                            # Créer l'espèce
+                                            species_id = species_recognition.add_species(
+                                                scientific_name=new_sci,
+                                                common_name_fr=new_fr,
+                                                common_name_en=new_en,
+                                                category=new_cat
+                                            )
+
+                                            if species_id:
+                                                st.success(f"✅ Espèce créée ! (ID: {species_id})")
+
+                                                # Proposer de l'ajouter à cette photo
+                                                if st.button("➕ Ajouter à cette photo",
+                                                           key=f"add_new_{species_id}_{media['id']}"):
+                                                    if species_recognition.add_species_to_dive(
+                                                        dive_id=media['dive_id'],
+                                                        species_id=species_id,
+                                                        media_id=media['id'],
+                                                        detected_by='manual'
+                                                    ):
+                                                        st.session_state[f'show_catalogue_{media["id"]}'] = False
+                                                        st.rerun()
+                                            else:
+                                                st.error("❌ Erreur : espèce peut-être déjà existante")
+
+                                with cat_tab3:
+                                    st.markdown("**Statistiques du catalogue**")
+                                    stats = species_recognition.get_species_stats()
+
+                                    col1, col2 = st.columns(2)
+                                    with col1:
+                                        st.metric("📚 Espèces cataloguées", stats['total_species'])
+                                    with col2:
+                                        st.metric("👁️ Observations totales", stats['total_observations'])
+
+                                # Bouton pour fermer le catalogue
+                                if st.button("❌ Fermer le catalogue", key=f"close_cat_{media['id']}"):
+                                    st.session_state[f'show_catalogue_{media["id"]}'] = False
+                                    st.rerun()
+
+                        # Bouton suppression du média
+                        if st.button(f"🗑️ Supprimer ce média", key=f"delete_{media['id']}", type="secondary", use_container_width=True):
+                            if media_manager.delete_media(media['id']):
+                                st.success(f"✅ Média supprimé !")
+                                st.rerun()
+                            else:
+                                st.error("❌ Erreur lors de la suppression")
 
         # Pagination
         st.divider()
@@ -264,113 +634,3 @@ with tab_upload:
                             st.warning(f"⚠️ **{detection['common_name_fr']}** détecté "
                                       f"(confiance: {detection['confidence']:.0%}) "
                                       f"mais non ajouté automatiquement")
-
-
-# ===== ONGLET ESPÈCES =====
-with tab_species:
-    st.markdown("### 🐠 Espèces observées")
-
-    species_stats = species_recognition.get_species_stats()
-
-    # Statistiques
-    col1, col2 = st.columns(2)
-    with col1:
-        st.metric("📚 Espèces dans le catalogue", species_stats['total_species'])
-    with col2:
-        st.metric("👁️ Total observations", species_stats['total_observations'])
-
-    st.divider()
-
-    # Top espèces observées
-    if species_stats['top_species']:
-        st.markdown("### 🏆 Espèces les plus observées")
-
-        for species in species_stats['top_species'][:5]:
-            if species['observation_count'] > 0:
-                col1, col2 = st.columns([3, 1])
-                with col1:
-                    st.write(f"**{species['common_name_fr']}** "
-                            f"({species['scientific_name']})")
-                with col2:
-                    st.write(f"{species['observation_count']} observation(s)")
-
-    st.divider()
-
-    # Recherche d'espèces
-    st.markdown("### 🔍 Rechercher une espèce")
-
-    search_query = st.text_input(
-        "Nom scientifique ou commun",
-        placeholder="ex: requin, Amphiprion, tortue...",
-        key="species_search"
-    )
-
-    if search_query:
-        results = species_recognition.search_species(search_query, limit=10)
-
-        if results:
-            st.markdown(f"**{len(results)} espèce(s) trouvée(s)**")
-            for species in results:
-                with st.expander(f"{species['common_name_fr']} ({species['scientific_name']})"):
-                    st.write(f"**Catégorie:** {species['category']}")
-                    if species['conservation_status']:
-                        st.write(f"**Statut de conservation:** {species['conservation_status']}")
-                    if species['description']:
-                        st.write(f"**Description:** {species['description']}")
-                    if species['habitat']:
-                        st.write(f"**Habitat:** {species['habitat']}")
-                    if species['depth_range']:
-                        st.write(f"**Profondeur:** {species['depth_range']}")
-        else:
-            st.info("Aucune espèce trouvée")
-
-    st.divider()
-
-    # Ajouter manuellement une espèce
-    with st.expander("➕ Ajouter une nouvelle espèce au catalogue"):
-        with st.form("add_species_form"):
-            col1, col2 = st.columns(2)
-
-            with col1:
-                new_scientific = st.text_input("Nom scientifique *", key="new_sci")
-                new_common_fr = st.text_input("Nom commun (français)", key="new_fr")
-                new_category = st.selectbox(
-                    "Catégorie *",
-                    ['poisson', 'corail', 'mollusque', 'crustacé',
-                     'échinoderme', 'mammifère', 'reptile', 'autre'],
-                    key="new_cat"
-                )
-
-            with col2:
-                new_common_en = st.text_input("Nom commun (anglais)", key="new_en")
-                new_conservation = st.text_input(
-                    "Statut conservation",
-                    placeholder="ex: LC, NT, VU, EN, CR",
-                    key="new_cons"
-                )
-                new_habitat = st.text_input("Habitat", key="new_hab")
-
-            new_description = st.text_area("Description", key="new_desc")
-            new_depth = st.text_input("Plage de profondeur", placeholder="ex: 0-30m", key="new_depth")
-
-            submitted = st.form_submit_button("Ajouter l'espèce", type="primary")
-
-            if submitted:
-                if not new_scientific:
-                    st.error("Le nom scientifique est obligatoire")
-                else:
-                    species_id = species_recognition.add_species(
-                        scientific_name=new_scientific,
-                        common_name_fr=new_common_fr,
-                        common_name_en=new_common_en,
-                        category=new_category,
-                        description=new_description,
-                        conservation_status=new_conservation,
-                        habitat=new_habitat,
-                        depth_range=new_depth
-                    )
-
-                    if species_id:
-                        st.success(f"✅ Espèce ajoutée avec succès ! (ID: {species_id})")
-                    else:
-                        st.error("❌ Erreur : cette espèce existe peut-être déjà")

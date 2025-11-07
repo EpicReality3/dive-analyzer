@@ -864,6 +864,144 @@ def get_site_by_name(site_name: str) -> Optional[Dict[str, Any]]:
         return None
 
 
+# ============================================================
+# GESTION DES PARAMÈTRES
+# ============================================================
+
+def save_setting(key: str, value: str) -> bool:
+    """
+    Sauvegarde un paramètre dans la base de données.
+
+    Args:
+        key: Clé du paramètre
+        value: Valeur du paramètre
+
+    Returns:
+        True si succès, False sinon
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        # Créer la table settings si elle n'existe pas
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # Insérer ou mettre à jour
+        cursor.execute("""
+            INSERT OR REPLACE INTO settings (key, value, updated_at)
+            VALUES (?, ?, CURRENT_TIMESTAMP)
+        """, (key, value))
+
+        conn.commit()
+        conn.close()
+        logger.info(f"Paramètre sauvegardé : {key}")
+        return True
+
+    except Exception as e:
+        logger.error(f"Erreur lors de la sauvegarde du paramètre '{key}' : {e}", exc_info=True)
+        return False
+
+
+def get_setting(key: str, default: str = "") -> str:
+    """
+    Récupère un paramètre de la base de données.
+
+    Args:
+        key: Clé du paramètre
+        default: Valeur par défaut si le paramètre n'existe pas
+
+    Returns:
+        Valeur du paramètre ou valeur par défaut
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        # Créer la table settings si elle n'existe pas
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        cursor.execute("SELECT value FROM settings WHERE key = ?", (key,))
+        row = cursor.fetchone()
+        conn.close()
+
+        if row:
+            return row[0]
+        return default
+
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération du paramètre '{key}' : {e}", exc_info=True)
+        return default
+
+
+def delete_setting(key: str) -> bool:
+    """
+    Supprime un paramètre de la base de données.
+
+    Args:
+        key: Clé du paramètre à supprimer
+
+    Returns:
+        True si succès, False sinon
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("DELETE FROM settings WHERE key = ?", (key,))
+
+        conn.commit()
+        conn.close()
+        logger.info(f"Paramètre supprimé : {key}")
+        return True
+
+    except Exception as e:
+        logger.error(f"Erreur lors de la suppression du paramètre '{key}' : {e}", exc_info=True)
+        return False
+
+
+def get_all_settings() -> Dict[str, str]:
+    """
+    Récupère tous les paramètres de la base de données.
+
+    Returns:
+        Dictionnaire des paramètres
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        # Créer la table settings si elle n'existe pas
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        cursor.execute("SELECT key, value FROM settings")
+        rows = cursor.fetchall()
+        conn.close()
+
+        return {row[0]: row[1] for row in rows}
+
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération de tous les paramètres : {e}", exc_info=True)
+        return {}
+
+
 # Initialiser la base au premier import (seulement si elle n'existe pas)
 if not DB_PATH.exists():
     init_database()

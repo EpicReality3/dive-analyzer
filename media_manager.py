@@ -341,6 +341,44 @@ def delete_media(media_id: int) -> bool:
         return False
 
 
+def update_media_description(media_id: int, description: str) -> bool:
+    """
+    Met à jour la description d'un média.
+
+    Args:
+        media_id: ID du média
+        description: Nouvelle description
+
+    Returns:
+        True si la mise à jour a réussi
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("""
+            UPDATE dive_media
+            SET description = ?
+            WHERE id = ?
+        """, (description, media_id))
+
+        conn.commit()
+        conn.close()
+
+        if cursor.rowcount > 0:
+            logger.info(f"Description mise à jour pour le média {media_id}")
+            return True
+        else:
+            logger.warning(f"Média {media_id} introuvable")
+            return False
+
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        logger.error(f"Erreur lors de la mise à jour de la description : {e}")
+        return False
+
+
 def get_media_stats() -> Dict[str, Any]:
     """
     Récupère des statistiques sur les médias.
