@@ -43,3 +43,7 @@ dive_analyzer.log
 # Test files
 test_*.py
 *_test.py
+
+# PDF exports
+exports/
+*.pdf

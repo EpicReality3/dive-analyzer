@@ -125,6 +125,22 @@ with tab_gallery:
                             else:
                                 st.warning("Vidéo non disponible")
 
+                        # Titre avec espèces identifiées
+                        media_species = species_recognition.get_media_species(media['id'])
+                        if media_species:
+                            # Afficher les 2 premières espèces sur le titre
+                            species_titles = []
+                            for sp in media_species[:2]:
+                                common_name = sp['common_name_fr'] or sp['scientific_name']
+                                scientific_name = sp['scientific_name']
+                                species_titles.append(f"{common_name} *{scientific_name}*")
+
+                            title_text = " • ".join(species_titles)
+                            if len(media_species) > 2:
+                                title_text += f" (+{len(media_species) - 2})"
+
+                            st.markdown(f"**{title_text}**")
+
                         # Informations
                         st.caption(f"📍 {media['site_nom']}")
                         st.caption(f"📅 {media['dive_date']}")

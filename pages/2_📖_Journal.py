@@ -208,6 +208,31 @@ else:
                     st.markdown("#### 📝 Notes")
                     st.markdown(plongee_complete['notes'])
 
+                # === BOUTON EXPORT PDF ===
+                st.divider()
+                if st.button("📄 Exporter en PDF", type="primary", key=f"export_pdf_{plongee_selectionnee}", use_container_width=True):
+                    import pdf_export
+
+                    with st.spinner("⏳ Génération du PDF en cours..."):
+                        pdf_path = pdf_export.generate_dive_pdf(plongee_selectionnee)
+
+                        if pdf_path:
+                            # Lire le fichier PDF généré
+                            with open(pdf_path, 'rb') as pdf_file:
+                                pdf_bytes = pdf_file.read()
+
+                            # Proposer le téléchargement
+                            st.download_button(
+                                label="💾 Télécharger le PDF",
+                                data=pdf_bytes,
+                                file_name=pdf_path.name,
+                                mime="application/pdf",
+                                use_container_width=True
+                            )
+                            st.success(f"✅ PDF généré avec succès : {pdf_path.name}")
+                        else:
+                            st.error("❌ Erreur lors de la génération du PDF")
+
                 # === MÉDIAS ASSOCIÉS ===
                 st.divider()
                 dive_media = media_manager.get_dive_media(plongee_selectionnee)
