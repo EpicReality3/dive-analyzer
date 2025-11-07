@@ -223,10 +223,30 @@
     animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
-/* ===== TITLE STYLING ===== */
+/* ===== TEXT & TITLE STYLING ===== */
 h1, h2, h3 {
     color: #e0f2fe !important;
     text-shadow: 0 0 30px rgba(96, 165, 250, 0.5);
+}
+
+/* Body text - Amélioration de la lisibilité */
+p, span, div, label, .stMarkdown {
+    color: #e2e8f0 !important;
+}
+
+/* Text in specific Streamlit elements */
+.stMarkdown p {
+    color: #e2e8f0 !important;
+}
+
+.stText {
+    color: #e2e8f0 !important;
+}
+
+/* Strong text */
+strong, b {
+    color: #f1f5f9 !important;
+    font-weight: 600;
 }
 
 /* ===== CUSTOM SCROLLBAR ===== */
