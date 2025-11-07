@@ -6,6 +6,7 @@ avec le style glassmorphism et les animations.
 """
 
 import streamlit as st
+import textwrap
 from pathlib import Path
 
 
@@ -52,16 +53,7 @@ def create_metric_card(icon: str, value: str, label: str, delta: str = None):
             delta_color = "#6b7280"  # Gris
             delta_icon = ""
 
-        delta_html = f'''
-        <div style="
-            color: {delta_color};
-            font-size: 0.9rem;
-            margin-top: 5px;
-            font-weight: 600;
-        ">
-            {delta_icon} {delta}
-        </div>
-        '''
+        delta_html = f'<div style="color: {delta_color}; font-size: 0.9rem; margin-top: 5px; font-weight: 600;">{delta_icon} {delta}</div>'
 
     html = f'''
     <div class="metric-card animate-fade-in">
@@ -108,16 +100,7 @@ def create_achievement_badge(
     progress_html = ""
     if not unlocked and target > 0:
         progress_pct = min(100, (progress / target) * 100)
-        progress_html = f'''
-        <div style="margin-top: 10px;">
-            <div class="progress-bar-container" style="height: 8px;">
-                <div class="progress-bar-fill" style="width: {progress_pct}%;"></div>
-            </div>
-            <div style="font-size: 0.7rem; color: #94a3b8; margin-top: 3px; text-align: center;">
-                {progress} / {target}
-            </div>
-        </div>
-        '''
+        progress_html = f'<div style="margin-top: 10px;"><div class="progress-bar-container" style="height: 8px;"><div class="progress-bar-fill" style="width: {progress_pct}%;"></div></div><div style="font-size: 0.7rem; color: #94a3b8; margin-top: 3px; text-align: center;">{progress} / {target}</div></div>'
 
     html = f'''
     <div class="achievement-badge {locked_class} animate-fade-in">
@@ -285,7 +268,7 @@ def create_info_card(title: str, content: str, icon: str = "ℹ️", type: str =
 
     Args:
         title: Titre de la carte
-        content: Contenu de la carte
+        content: Contenu de la carte (peut contenir du HTML)
         icon: Icône à afficher
         type: Type de carte ("info", "success", "warning", "error")
 
@@ -297,6 +280,9 @@ def create_info_card(title: str, content: str, icon: str = "ℹ️", type: str =
         ...     "info"
         ... )
     """
+    # Nettoyer le content: enlever l'indentation commune et les espaces de début/fin
+    clean_content = textwrap.dedent(content).strip()
+
     # Définir les couleurs selon le type
     color_map = {
         "info": "rgba(59, 130, 246, 0.2)",
@@ -330,7 +316,7 @@ def create_info_card(title: str, content: str, icon: str = "ℹ️", type: str =
             <span style="font-size: 1.1rem; font-weight: 600; color: #e0f2fe;">{title}</span>
         </div>
         <div style="color: #cbd5e1; line-height: 1.6;">
-            {content}
+            {clean_content}
         </div>
     </div>
     '''
