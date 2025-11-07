@@ -22,8 +22,9 @@ build/
 .DS_Store
 Thumbs.db
 
-# Streamlit
+# Streamlit (ignore config but keep custom CSS)
 .streamlit/
+!.streamlit/style.css
 
 # Base de données locale (données utilisateur)
 dive_log.db

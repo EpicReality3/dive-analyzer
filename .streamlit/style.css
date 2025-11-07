@@ -1,0 +1,266 @@
+/* ===== GLOBAL STYLES ===== */
+:root {
+    --primary-blue: #1e40af;
+    --secondary-blue: #3b82f6;
+    --accent-cyan: #06b6d4;
+    --dark-bg: #0f172a;
+    --glass-bg: rgba(255, 255, 255, 0.05);
+    --glass-border: rgba(255, 255, 255, 0.1);
+}
+
+/* Background gradient */
+.stApp {
+    background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0c4a6e 100%);
+}
+
+/* ===== GLASSMORPHISM CARDS ===== */
+.glass-card {
+    background: var(--glass-bg);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-radius: 20px;
+    border: 1px solid var(--glass-border);
+    padding: 25px;
+    box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+    transition: all 0.3s ease;
+}
+
+.glass-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 12px 40px 0 rgba(31, 38, 135, 0.5);
+}
+
+/* ===== METRIC CARDS ===== */
+.metric-card {
+    background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(6, 182, 212, 0.1) 100%);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-radius: 15px;
+    border: 1px solid rgba(59, 130, 246, 0.2);
+    padding: 20px;
+    text-align: center;
+    box-shadow: 0 4px 16px 0 rgba(59, 130, 246, 0.2);
+    transition: all 0.3s ease;
+}
+
+.metric-card:hover {
+    transform: scale(1.05);
+    box-shadow: 0 8px 24px 0 rgba(59, 130, 246, 0.4);
+}
+
+.metric-icon {
+    font-size: 2.5rem;
+    margin-bottom: 10px;
+    filter: drop-shadow(0 0 10px rgba(59, 130, 246, 0.6));
+}
+
+.metric-value {
+    font-size: 2rem;
+    font-weight: bold;
+    color: #60a5fa;
+    margin: 10px 0;
+    text-shadow: 0 0 20px rgba(96, 165, 250, 0.5);
+}
+
+.metric-label {
+    font-size: 0.9rem;
+    color: #cbd5e1;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+/* ===== ACHIEVEMENT BADGES ===== */
+.achievement-badge {
+    background: linear-gradient(135deg, rgba(234, 179, 8, 0.2) 0%, rgba(251, 191, 36, 0.2) 100%);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border-radius: 15px;
+    border: 2px solid rgba(234, 179, 8, 0.3);
+    padding: 15px;
+    text-align: center;
+    transition: all 0.3s ease;
+    cursor: pointer;
+}
+
+.achievement-badge:hover {
+    transform: scale(1.1) rotate(5deg);
+    box-shadow: 0 0 30px rgba(234, 179, 8, 0.6);
+}
+
+.achievement-badge.locked {
+    background: linear-gradient(135deg, rgba(100, 116, 139, 0.1) 0%, rgba(71, 85, 105, 0.1) 100%);
+    border: 2px solid rgba(100, 116, 139, 0.2);
+    opacity: 0.5;
+    filter: grayscale(100%);
+}
+
+.achievement-icon {
+    font-size: 3rem;
+    margin-bottom: 10px;
+    filter: drop-shadow(0 0 15px rgba(234, 179, 8, 0.8));
+}
+
+.achievement-badge.locked .achievement-icon {
+    filter: none;
+}
+
+.achievement-title {
+    font-size: 1rem;
+    font-weight: bold;
+    color: #fbbf24;
+    margin: 5px 0;
+}
+
+.achievement-badge.locked .achievement-title {
+    color: #64748b;
+}
+
+.achievement-description {
+    font-size: 0.8rem;
+    color: #cbd5e1;
+    margin-top: 5px;
+}
+
+/* ===== PROGRESS BARS ===== */
+.progress-bar-container {
+    background: rgba(30, 41, 59, 0.5);
+    border-radius: 10px;
+    height: 20px;
+    overflow: hidden;
+    border: 1px solid rgba(59, 130, 246, 0.2);
+}
+
+.progress-bar-fill {
+    background: linear-gradient(90deg, #3b82f6 0%, #06b6d4 100%);
+    height: 100%;
+    border-radius: 10px;
+    transition: width 0.5s ease;
+    box-shadow: 0 0 20px rgba(59, 130, 246, 0.6);
+}
+
+/* ===== TABS STYLING ===== */
+.stTabs [data-baseweb="tab-list"] {
+    gap: 8px;
+    background: rgba(15, 23, 42, 0.5);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border-radius: 15px;
+    padding: 10px;
+}
+
+.stTabs [data-baseweb="tab"] {
+    background: transparent;
+    border-radius: 10px;
+    color: #94a3b8;
+    padding: 10px 20px;
+    font-weight: 500;
+    transition: all 0.3s ease;
+}
+
+.stTabs [data-baseweb="tab"]:hover {
+    background: rgba(59, 130, 246, 0.1);
+    color: #60a5fa;
+}
+
+.stTabs [aria-selected="true"] {
+    background: linear-gradient(135deg, rgba(59, 130, 246, 0.2) 0%, rgba(6, 182, 212, 0.2) 100%);
+    color: #60a5fa !important;
+    border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+/* ===== BUTTONS ===== */
+.stButton > button {
+    background: linear-gradient(135deg, #3b82f6 0%, #06b6d4 100%);
+    color: white;
+    border: none;
+    border-radius: 10px;
+    padding: 12px 24px;
+    font-weight: 600;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 16px rgba(59, 130, 246, 0.3);
+}
+
+.stButton > button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(59, 130, 246, 0.5);
+}
+
+/* ===== ANIMATIONS ===== */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes pulse {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.5;
+    }
+}
+
+@keyframes shimmer {
+    0% {
+        background-position: -1000px 0;
+    }
+    100% {
+        background-position: 1000px 0;
+    }
+}
+
+.animate-fade-in {
+    animation: fadeIn 0.6s ease-out;
+}
+
+.animate-pulse {
+    animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* ===== TITLE STYLING ===== */
+h1, h2, h3 {
+    color: #e0f2fe !important;
+    text-shadow: 0 0 30px rgba(96, 165, 250, 0.5);
+}
+
+/* ===== CUSTOM SCROLLBAR ===== */
+::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+::-webkit-scrollbar-track {
+    background: rgba(15, 23, 42, 0.5);
+}
+
+::-webkit-scrollbar-thumb {
+    background: linear-gradient(135deg, #3b82f6 0%, #06b6d4 100%);
+    border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(135deg, #2563eb 0%, #0891b2 100%);
+}
+
+/* ===== DIVIDERS ===== */
+hr {
+    border: none;
+    height: 1px;
+    background: linear-gradient(90deg, transparent 0%, rgba(59, 130, 246, 0.5) 50%, transparent 100%);
+    margin: 30px 0;
+}
+
+/* ===== DATAFRAME STYLING ===== */
+.stDataFrame {
+    background: var(--glass-bg);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-radius: 15px;
+    border: 1px solid var(--glass-border);
+}
