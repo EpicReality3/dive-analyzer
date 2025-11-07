@@ -1,5 +1,7 @@
 import streamlit as st
 import database
+import media_manager
+import species_recognition
 import pandas as pd
 from pathlib import Path
 from config import config
@@ -205,6 +207,72 @@ else:
                 if plongee_complete['notes']:
                     st.markdown("#### 📝 Notes")
                     st.markdown(plongee_complete['notes'])
+
+                # === MÉDIAS ASSOCIÉS ===
+                st.divider()
+                dive_media = media_manager.get_dive_media(plongee_selectionnee)
+
+                if dive_media:
+                    st.markdown(f"#### 📸 Médias ({len(dive_media)})")
+
+                    # Afficher les médias en grille
+                    cols_per_row = 3
+                    for i in range(0, len(dive_media), cols_per_row):
+                        cols = st.columns(cols_per_row)
+                        for j in range(cols_per_row):
+                            idx = i + j
+                            if idx < len(dive_media):
+                                media = dive_media[idx]
+                                with cols[j]:
+                                    if media['type'] == 'photo':
+                                        if media['thumbnail_path'] and Path(media['thumbnail_path']).exists():
+                                            st.image(media['thumbnail_path'], use_container_width=True)
+                                        elif Path(media['filepath']).exists():
+                                            st.image(media['filepath'], use_container_width=True)
+                                    else:  # video
+                                        if Path(media['filepath']).exists():
+                                            st.video(media['filepath'])
+
+                                    if media['description']:
+                                        st.caption(media['description'])
+                else:
+                    st.info("📷 Aucun média pour cette plongée. Ajoutez des photos/vidéos depuis la page Galerie !")
+
+                # === ESPÈCES OBSERVÉES ===
+                st.divider()
+                dive_species = species_recognition.get_dive_species(plongee_selectionnee)
+
+                if dive_species:
+                    st.markdown(f"#### 🐠 Espèces Observées ({len(dive_species)})")
+
+                    for species in dive_species:
+                        col1, col2, col3 = st.columns([3, 1, 1])
+
+                        with col1:
+                            emoji_map = {
+                                'poisson': '🐟',
+                                'corail': '🪸',
+                                'mollusque': '🐚',
+                                'crustacé': '🦀',
+                                'échinoderme': '⭐',
+                                'mammifère': '🐋',
+                                'reptile': '🐢',
+                                'autre': '🌊'
+                            }
+                            emoji = emoji_map.get(species['category'], '🌊')
+                            st.write(f"{emoji} {species['common_name_fr'] or species['scientific_name']}")
+
+                        with col2:
+                            if species['quantity'] > 1:
+                                st.caption(f"Qté: {species['quantity']}")
+
+                        with col3:
+                            if species['detected_by'] == 'ai':
+                                st.caption("🤖 IA")
+                            elif species['detected_by'] == 'verified':
+                                st.caption("✓ Vérifié")
+                else:
+                    st.info("🐠 Aucune espèce enregistrée. Utilisez la page Espèces pour ajouter vos observations !")
 
             # === TAB PROFIL GRAPHIQUE ===
             with tab_profil:
