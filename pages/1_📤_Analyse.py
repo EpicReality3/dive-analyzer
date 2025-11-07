@@ -8,11 +8,20 @@ from pathlib import Path
 from validation import validate_uploaded_file, sanitize_filename
 from config import config
 from logger import get_logger
+from ui_components import (
+    load_custom_css,
+    create_metric_card,
+    create_info_card,
+    create_glass_card
+)
 
 logger = get_logger(__name__)
 
 # Configuration page
 st.set_page_config(page_title="Analyse de Plongée", page_icon="📤", layout="wide")
+
+# Charger le CSS personnalisé
+load_custom_css()
 
 # Bouton retour accueil dans sidebar
 if st.sidebar.button("🏠 Accueil", use_container_width=True):
@@ -26,11 +35,35 @@ def render_reset_button() -> None:
         st.rerun()
 
 
-st.title("🤿 DIVE ANALYZER - Analyse")
+# Header animé avec glassmorphism
+st.markdown("""
+<div class="animate-fade-in">
+    <h1 style="text-align: center; font-size: 3rem; margin-bottom: 0;">
+        📤 ANALYSE DE PLONGÉE
+    </h1>
+    <p style="text-align: center; color: #94a3b8; font-size: 1.2rem; margin-top: 0;">
+        Uploadez votre fichier pour une analyse complète
+    </p>
+</div>
+""", unsafe_allow_html=True)
+
+st.markdown("<br>", unsafe_allow_html=True)
+
+# Section upload hero dans une glass card
+st.markdown("""
+<div class="glass-card" style="text-align: center; padding: 40px;">
+    <div style="font-size: 4rem; margin-bottom: 20px;">🤿</div>
+    <h3 style="color: #e0f2fe; margin-bottom: 10px;">Uploader un Fichier de Plongée</h3>
+    <p style="color: #94a3b8;">Formats supportés: .fit, .xml, .uddf, .dl7</p>
+</div>
+""", unsafe_allow_html=True)
+
+st.markdown("<br>", unsafe_allow_html=True)
 
 uploaded_file = st.file_uploader(
-    "Uploadez un fichier de plongée",
-    type=['.fit', '.xml', '.uddf', '.dl7']
+    "Choisissez un fichier",
+    type=['.fit', '.xml', '.uddf', '.dl7'],
+    label_visibility="collapsed"
 )
 
 if uploaded_file is not None:
@@ -38,22 +71,36 @@ if uploaded_file is not None:
     is_valid, error_msg = validate_uploaded_file(uploaded_file)
 
     if not is_valid:
-        st.error(f"❌ {error_msg}")
+        create_info_card(
+            "Fichier invalide",
+            f"{error_msg}",
+            "❌",
+            "error"
+        )
         logger.warning(f"Fichier rejeté : {uploaded_file.name} - {error_msg}")
         st.stop()
 
     # Afficher infos fichier
-    st.success(f"✅ Fichier uploadé et validé : {uploaded_file.name}")
+    create_info_card(
+        "Fichier accepté",
+        f"<b>{uploaded_file.name}</b> a été uploadé et validé avec succès",
+        "✅",
+        "success"
+    )
     logger.info(f"Fichier accepté : {uploaded_file.name}")
+
+    st.markdown("<br>", unsafe_allow_html=True)
 
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.metric("📄 Nom", uploaded_file.name)
+        create_metric_card("📄", uploaded_file.name, "Nom du Fichier")
     with col2:
-        st.metric("📦 Taille", f"{uploaded_file.size / 1024:.1f} KB")
+        create_metric_card("📦", f"{uploaded_file.size / 1024:.1f} KB", "Taille")
     with col3:
         file_ext = uploaded_file.name.split('.')[-1]
-        st.metric("🔖 Format", f".{file_ext}")
+        create_metric_card("🔖", f".{file_ext}", "Format")
+
+    st.markdown("<br>", unsafe_allow_html=True)
 
     # Parser le fichier
     with st.spinner("🔄 Parsing du fichier..."):
@@ -61,59 +108,107 @@ if uploaded_file is not None:
             df = dive_parser.parse_dive_file(uploaded_file)
 
             if df.empty:
-                st.error("❌ Erreur : Aucune donnée extraite du fichier")
+                create_info_card(
+                    "Parsing échoué",
+                    "Aucune donnée n'a pu être extraite du fichier",
+                    "❌",
+                    "error"
+                )
             else:
-                st.success(f"✅ {len(df)} points de données extraits")
+                create_info_card(
+                    "Parsing réussi",
+                    f"<b>{len(df)}</b> points de données extraits avec succès",
+                    "✅",
+                    "success"
+                )
+
+                st.markdown("<br>", unsafe_allow_html=True)
 
                 # === DASHBOARD KPIs ===
-                st.markdown("### 📊 Vue d'Ensemble")
-                col1, col2, col3, col4, col5 = st.columns(5)
+                st.markdown("""
+                <div class="animate-fade-in">
+                    <h3 style="text-align: center; color: #e0f2fe;">📊 Vue d'Ensemble</h3>
+                </div>
+                """, unsafe_allow_html=True)
+
+                st.markdown("<br>", unsafe_allow_html=True)
+
+                col1, col2, col3, col4 = st.columns(4)
 
                 with col1:
-                    st.metric("⬇️ Profondeur Max", f"{df['profondeur_metres'].max():.1f} m")
+                    create_metric_card("⬇️", f"{df['profondeur_metres'].max():.1f}m", "Profondeur Max")
 
                 with col2:
-                    st.metric("⏱️ Durée Totale", f"{df['temps_secondes'].max() / 60:.0f} min")
+                    create_metric_card("⏱️", f"{df['temps_secondes'].max() / 60:.0f} min", "Durée Totale")
 
                 with col3:
-                    sac_result = analyzer.calculate_sac(df)
-                    if sac_result and sac_result.get('sac'):
-                        st.metric("🫁 SAC", f"{sac_result['sac']:.1f} L/min", help="Surface Air Consumption")
-                    else:
-                        st.metric("🫁 SAC", "N/A", help="Nécessite données de pression")
-
-                with col4:
                     temp_min = df['temperature_celsius'].min()
                     if pd.notna(temp_min):
-                        st.metric("🌡️ Température Min", f"{temp_min:.1f} °C")
+                        create_metric_card("🌡️", f"{temp_min:.1f}°C", "Température Min")
                     else:
-                        st.metric("🌡️ Température", "N/A")
+                        create_metric_card("🌡️", "N/A", "Température Min")
 
-                with col5:
+                with col4:
                     bottom_time = analyzer.calculate_bottom_time(df)
-                    st.metric("⏳ Temps de Fond", f"{bottom_time['temps_fond_minutes']:.1f} min", help="Temps sous 3m")
+                    create_metric_card("⏳", f"{bottom_time['temps_fond_minutes']:.1f} min", "Temps de Fond")
 
-                st.divider()
+                st.markdown("<br>", unsafe_allow_html=True)
+
+                col1, col2 = st.columns(2)
+
+                with col1:
+                    sac_result = analyzer.calculate_sac(df)
+                    if sac_result and sac_result.get('sac'):
+                        create_metric_card("🫁", f"{sac_result['sac']:.1f} L/min", "SAC")
+                    else:
+                        create_metric_card("🫁", "N/A", "SAC")
+
+                st.markdown("<br>", unsafe_allow_html=True)
 
                 # === SECTION PROFIL ===
-                st.markdown("### 🤿 Profil de Plongée")
+                st.markdown("""
+                <div class="animate-fade-in">
+                    <h3 style="text-align: center; color: #e0f2fe;">🤿 Profil de Plongée</h3>
+                </div>
+                """, unsafe_allow_html=True)
 
-                # Graphique
+                st.markdown("<br>", unsafe_allow_html=True)
+
+                # Graphique dans une glass card
+                st.markdown('<div class="glass-card">', unsafe_allow_html=True)
                 try:
                     fig = visualizer.plot_depth_profile(df)
                     st.plotly_chart(fig, use_container_width=True)
                 except Exception as e:
-                    st.error(f"❌ Erreur lors de la création du graphique : {str(e)}")
+                    create_info_card(
+                        "Erreur graphique",
+                        f"Impossible de créer le graphique : {str(e)}",
+                        "❌",
+                        "error"
+                    )
+                st.markdown('</div>', unsafe_allow_html=True)
 
-                # Bandeau sécurité SOUS le graphique (version compacte native)
+                st.markdown("<br>", unsafe_allow_html=True)
+
+                # Bandeau sécurité
                 speeds = visualizer.calculate_ascent_speed(df)
                 max_speed = speeds.max()
                 if max_speed < 10.0:
-                    st.success(f"🟢 **Plongée sécuritaire** — Vitesse remontée max : {max_speed:.1f} m/min")
+                    create_info_card(
+                        "Plongée sécuritaire",
+                        f"Vitesse de remontée maximale : <b>{max_speed:.1f} m/min</b> ✓",
+                        "🟢",
+                        "success"
+                    )
                 else:
-                    st.error(f"🔴 **Alerte** — Vitesse remontée max : {max_speed:.1f} m/min (> 10 m/min)")
+                    create_info_card(
+                        "Alerte vitesse de remontée",
+                        f"Vitesse de remontée maximale : <b>{max_speed:.1f} m/min</b><br>Limite recommandée : 10 m/min",
+                        "🔴",
+                        "error"
+                    )
 
-                st.divider()
+                st.markdown("<br>", unsafe_allow_html=True)
 
                 # === TABS NAVIGATION ===
                 tab1, tab2 = st.tabs(["📊 Statistiques Avancées", "🔬 Physique de Décompression"])
@@ -141,16 +236,26 @@ if uploaded_file is not None:
                     sac_result = analyzer.calculate_sac(df)
 
                     if sac_result and sac_result['mode'] == 'auto':
-                        st.success("✅ Calcul automatique (données du fichier)")
+                        create_info_card(
+                            "Calcul automatique",
+                            "Les données de pression ont été extraites du fichier",
+                            "✅",
+                            "success"
+                        )
                         col1, col2, col3 = st.columns(3)
                         with col1:
-                            st.metric("SAC", f"{sac_result['sac']:.1f} L/min")
+                            create_metric_card("🫁", f"{sac_result['sac']:.1f} L/min", "SAC")
                         with col2:
-                            st.metric("Pression moyenne", f"{sac_result['pression_moyenne']:.2f} bar")
+                            create_metric_card("📊", f"{sac_result['pression_moyenne']:.2f} bar", "Pression Moyenne")
                         with col3:
-                            st.metric("Volume consommé", f"{sac_result['volume_consomme']:.0f} L")
+                            create_metric_card("💨", f"{sac_result['volume_consomme']:.0f} L", "Volume Consommé")
                     else:
-                        st.info("ℹ️ Pas de données de pression. Saisie manuelle requise.")
+                        create_info_card(
+                            "Saisie manuelle requise",
+                            "Pas de données de pression dans le fichier. Veuillez saisir les valeurs manuellement.",
+                            "ℹ️",
+                            "info"
+                        )
 
                         with st.form("sac_manual"):
                             col1, col2, col3 = st.columns(3)
@@ -166,14 +271,19 @@ if uploaded_file is not None:
                             if submitted:
                                 sac_result = analyzer.calculate_sac(df, p_debut, p_fin, v_bouteille)
                                 if sac_result:
-                                    st.success("✅ Calcul effectué")
+                                    create_info_card(
+                                        "Calcul effectué",
+                                        "Le SAC a été calculé avec les valeurs manuelles",
+                                        "✅",
+                                        "success"
+                                    )
                                     col1, col2, col3 = st.columns(3)
                                     with col1:
-                                        st.metric("SAC", f"{sac_result['sac']:.1f} L/min")
+                                        create_metric_card("🫁", f"{sac_result['sac']:.1f} L/min", "SAC")
                                     with col2:
-                                        st.metric("Pression moyenne", f"{sac_result['pression_moyenne']:.2f} bar")
+                                        create_metric_card("📊", f"{sac_result['pression_moyenne']:.2f} bar", "Pression Moyenne")
                                     with col3:
-                                        st.metric("Volume consommé", f"{sac_result['volume_consomme']:.0f} L")
+                                        create_metric_card("💨", f"{sac_result['volume_consomme']:.0f} L", "Volume Consommé")
 
                     st.divider()
 
@@ -195,13 +305,23 @@ if uploaded_file is not None:
                                 help=f"À {temp_stats['temp_max_time']:.1f} min"
                             )
                     else:
-                        st.info("Pas de données de température disponibles")
+                        create_info_card(
+                            "Données manquantes",
+                            "Pas de données de température disponibles dans ce fichier",
+                            "ℹ️",
+                            "info"
+                        )
 
                 with tab2:
                     # Warning plus visible
-                    st.warning(
-                        "⚠️ **Modèle pédagogique simplifié** (1 compartiment, demi-vie 40 min)\n\n"
-                        "**Ne pas utiliser pour planification de plongées réelles.**"
+                    create_info_card(
+                        "Modèle pédagogique simplifié",
+                        """
+                        Ce modèle utilise 1 compartiment avec une demi-vie de 40 minutes.<br><br>
+                        <b>⚠️ Ne pas utiliser pour la planification de plongées réelles.</b>
+                        """,
+                        "⚠️",
+                        "warning"
                     )
 
                     # Calculer les métriques avancées
@@ -282,12 +402,23 @@ if uploaded_file is not None:
                 st.divider()
 
                 # === FORMULAIRE SAUVEGARDE ===
-                st.markdown("### 💾 Sauvegarder dans le Journal")
+                st.markdown("""
+                <div class="animate-fade-in">
+                    <h3 style="text-align: center; color: #e0f2fe;">💾 Sauvegarder dans le Journal</h3>
+                </div>
+                """, unsafe_allow_html=True)
+
+                st.markdown("<br>", unsafe_allow_html=True)
 
                 with st.form("save_dive_form"):
-                    st.markdown("**📋 Informations de Plongée**")
+                    # SECTION 1: Informations de Plongée
+                    st.markdown("""
+                    <div class="glass-card" style="margin-bottom: 20px;">
+                        <h4 style="color: #e0f2fe; margin-top: 0;">📍 Informations de Plongée</h4>
+                    </div>
+                    """, unsafe_allow_html=True)
 
-                    col1, col2 = st.columns(2)
+                    col1, col2, col3 = st.columns(3)
 
                     with col1:
                         site_nom = st.text_input(
@@ -296,24 +427,38 @@ if uploaded_file is not None:
                             help="Nom du site de plongée"
                         )
 
+                    with col2:
                         buddy_nom = st.text_input(
                             "👥 Buddy/Palanquée",
                             placeholder="Ex: Marie, Thomas...",
                             help="Optionnel - laissez vide si plongée solo"
                         )
 
+                    with col3:
                         dive_type = st.selectbox(
                             "🤿 Type de plongée *",
                             options=["exploration", "formation", "technique"],
                             help="Type de plongée effectuée"
                         )
 
-                    with col2:
+                    st.markdown("<br>", unsafe_allow_html=True)
+
+                    # SECTION 2: Conditions Environnementales
+                    st.markdown("""
+                    <div class="glass-card" style="margin-bottom: 20px;">
+                        <h4 style="color: #e0f2fe; margin-top: 0;">🌊 Conditions Environnementales</h4>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                    col1, col2, col3 = st.columns(3)
+
+                    with col1:
                         houle = st.selectbox(
                             "🌊 Houle",
                             options=["aucune", "faible", "moyenne", "forte"]
                         )
 
+                    with col2:
                         visibilite = st.number_input(
                             "👁️ Visibilité (mètres)",
                             min_value=0,
@@ -322,12 +467,20 @@ if uploaded_file is not None:
                             step=1
                         )
 
+                    with col3:
                         courant = st.selectbox(
                             "💨 Courant",
                             options=["aucun", "faible", "moyen", "fort"]
                         )
 
-                    st.divider()
+                    st.markdown("<br>", unsafe_allow_html=True)
+
+                    # SECTION 3: Évaluation & Notes
+                    st.markdown("""
+                    <div class="glass-card" style="margin-bottom: 20px;">
+                        <h4 style="color: #e0f2fe; margin-top: 0;">⭐ Évaluation & Notes</h4>
+                    </div>
+                    """, unsafe_allow_html=True)
 
                     rating = st.slider(
                         "⭐ Évaluation",
@@ -365,7 +518,12 @@ if uploaded_file is not None:
                     if submitted:
                         # Validation
                         if not site_nom:
-                            st.error("❌ Le site de plongée est obligatoire")
+                            create_info_card(
+                                "Champ obligatoire manquant",
+                                "Le site de plongée est un champ obligatoire",
+                                "❌",
+                                "error"
+                            )
                         else:
                             # Préparer les données pour la DB
                             from datetime import datetime
@@ -420,17 +578,32 @@ if uploaded_file is not None:
                             # Insérer dans la base de données
                             try:
                                 dive_id = database.insert_dive(dive_data)
-                                st.success(f"✅ Plongée enregistrée avec succès (ID: {dive_id})")
+                                create_info_card(
+                                    "Plongée enregistrée",
+                                    f"Votre plongée a été sauvegardée avec succès dans le journal.<br><b>ID: {dive_id}</b>",
+                                    "✅",
+                                    "success"
+                                )
 
                                 # Sauvegarder le DataFrame en cache pour améliorer les performances futures (Phase 2)
                                 cache_saved = database.save_dive_cache(dive_id, df)
                                 if cache_saved:
                                     logger.info(f"DataFrame mis en cache pour la plongée {dive_id}")
 
-                                st.info("💡 Utilisez 'Analyser une autre plongée' pour continuer")
+                                create_info_card(
+                                    "Prochaine étape",
+                                    "Utilisez le bouton ci-dessous pour analyser une autre plongée",
+                                    "💡",
+                                    "info"
+                                )
                                 logger.info(f"Plongée sauvegardée : ID {dive_id}, site: {site_nom}")
                             except Exception as e:
-                                st.error(f"❌ Erreur lors de l'enregistrement : {str(e)}")
+                                create_info_card(
+                                    "Erreur d'enregistrement",
+                                    f"Une erreur s'est produite lors de la sauvegarde : {str(e)}",
+                                    "❌",
+                                    "error"
+                                )
                                 logger.error(f"Erreur lors de l'enregistrement : {e}", exc_info=True)
 
                 st.divider()
@@ -439,7 +612,17 @@ if uploaded_file is not None:
                 render_reset_button()
 
         except Exception as e:
-            st.error(f"❌ Erreur lors du parsing : {str(e)}")
+            create_info_card(
+                "Erreur de parsing",
+                f"Impossible d'analyser le fichier : {str(e)}",
+                "❌",
+                "error"
+            )
             logger.error(f"Erreur lors du parsing de {uploaded_file.name} : {e}", exc_info=True)
 else:
-    st.info("Uploadez un fichier de plongée")
+    create_info_card(
+        "Aucun fichier sélectionné",
+        "Veuillez uploader un fichier de plongée pour commencer l'analyse",
+        "📤",
+        "info"
+    )
